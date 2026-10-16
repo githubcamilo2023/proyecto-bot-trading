@@ -12,18 +12,21 @@ CacheControl==0.14.4
 ccxt==4.5.88
 certifi==2026.7.22
 cffi==2.0.0
+cfgv==3.5.0
 charset-normalizer==3.4.7
 coincurve==21.0.0
 coverage==7.16.2
 cryptography==50.0.2
 cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
+distlib==0.4.3
 docstring_parser==0.18.0
 filelock==4.2.0
 frozenlist==1.8.0
 h11==0.16.0
 httpcore2==2.13.1
 httpx2==2.13.1
+identify==2.6.20
 idna==3.18
 iniconfig==2.3.1
 jiter==0.17.0
@@ -35,6 +38,7 @@ msgpack==1.2.3
 multidict==6.9.1
 mypy==2.4.0
 mypy_extensions==1.1.0
+nodeenv==1.11.0
 opentelemetry-api==1.45.1
 orjson==3.13.0
 packageurl-python==0.17.6
@@ -45,6 +49,7 @@ pip_api==0.0.35
 pip_audit==2.10.1
 platformdirs==4.13.1
 pluggy==1.7.0
+pre_commit==4.7.0
 propcache==0.5.2
 py-serializable==2.1.0
 pycparser==3.0
@@ -54,6 +59,8 @@ Pygments==2.21.0
 pyparsing==3.3.3
 pytest==9.1.1
 pytest-cov==7.1.0
+python-discovery==1.6.2
+PyYAML==6.0.3
 requests==2.34.2
 rich==15.0.0
 ruff==0.17.1
@@ -66,5 +73,6 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 urllib3==2.8.0
 uvloop==0.22.1
+virtualenv==21.14.8
 yarl==1.25.1
 zlib-ng==1.0.0
