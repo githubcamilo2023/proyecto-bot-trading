@@ -1,0 +1,16 @@
+{
+  "name": "rsi-sobrevendido",
+  "symbol": "BTC/USDT",
+  "timeframe": "4h",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.01",
+  "notes": "Compra rebotes (RSI < 30) solo si el precio está sobre la media de 200 velas; sale cuando el RSI se recupera.",
+  "entry": {
+    "type": "all",
+    "of": [
+      {"type": "cmp", "left": {"kind": "rsi", "period": 14}, "op": "<", "right": 30},
+      {"type": "cmp", "left": {"kind": "close"}, "op": ">", "right": {"kind": "sma", "period": 200}}
+    ]
+  },
+  "exit": {"type": "cmp", "left": {"kind": "rsi", "period": 14}, "op": ">", "right": 55}
+}
