@@ -38,7 +38,7 @@ class Fake:
 
 def test_valid_reply_becomes_a_validated_strategy():
     p = propose("compra cuando el RSI baje de 30", Fake(json.dumps(GOOD)))
-    assert isinstance(p.strategy, Strategy) and p.attempts == 1 and p.strategy.stop_loss_pct == D("0.01")
+    assert isinstance(p.strategy, Strategy) and p.attempts == 1 and p.strategy.stop_loss_pct == D("0.03")
 
 
 def test_reply_wrapped_in_text_and_code_fences_is_accepted():
@@ -189,7 +189,7 @@ def test_description_is_generated_from_the_schema_not_from_the_model():
         "el precio de cierre cruza hacia arriba a la media simple de 200 velas",
         "la media exponencial de 9 velas es mayor o igual que 100.5",
         "Tamaño pedido: 2",
-        "Stop-loss: vende si el precio cae 1",
+        "Stop-loss: vende si el precio cae 3",
         "Notas: ojo",
     ):
         assert fragment in text

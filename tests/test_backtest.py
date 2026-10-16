@@ -109,11 +109,11 @@ def _ohlc(rows, step: timedelta = H) -> list[Candle]:
     ]
 
 
-def test_default_stop_loss_is_one_percent():
+def test_default_stop_loss_is_three_percent():
     assert strat(ALWAYS, NEVER).model_copy().stop_loss_pct == D("0.5")
     spec = {"name": "t", "symbol": "BTC/USDT", "timeframe": "1h", "size_pct": "0.1"}
     s = Strategy.model_validate(spec | {"entry": ALWAYS, "exit": NEVER})
-    assert s.stop_loss_pct == D("0.01")
+    assert s.stop_loss_pct == D("0.03")
 
 
 @pytest.mark.parametrize("bad", ["0", "-0.01", "1", "1.5"])
