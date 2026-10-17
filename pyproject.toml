@@ -43,7 +43,7 @@ files = ["src"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["ccxt", "ccxt.*"]
+module = ["ccxt", "ccxt.*", "anthropic", "anthropic.*"]
 ignore_missing_imports = true
 
 [tool.coverage.report]
