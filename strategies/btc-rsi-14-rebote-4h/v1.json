@@ -1,0 +1,27 @@
+{
+  "name": "btc-rsi-14-rebote-4h",
+  "version": 1,
+  "symbol": "BTC/USDT",
+  "timeframe": "4h",
+  "entry": {
+    "type": "cmp",
+    "left": {
+      "kind": "rsi",
+      "period": 14
+    },
+    "op": "<",
+    "right": "30"
+  },
+  "exit": {
+    "type": "cmp",
+    "left": {
+      "kind": "rsi",
+      "period": 14
+    },
+    "op": ">",
+    "right": "55"
+  },
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.03",
+  "notes": ""
+}

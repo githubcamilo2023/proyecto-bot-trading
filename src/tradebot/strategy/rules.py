@@ -67,7 +67,7 @@ class Strategy(_Model):
 
     name: str = Field(pattern=NAME_PATTERN)
     version: int = Field(1, ge=1)
-    symbol: str = Field(min_length=3)
+    symbol: str = Field(pattern=r"^[A-Z0-9]{2,12}/[A-Z0-9]{2,12}$")  # formato del exchange: BASE/QUOTE
     timeframe: str
     entry: Cond
     exit: Cond

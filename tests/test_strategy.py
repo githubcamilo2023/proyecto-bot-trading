@@ -313,3 +313,11 @@ def test_rule_condition_count_limit():
     assert strat(ok)
     with pytest.raises(ValueError, match="comparaciones"):
         strat({"type": "all", "of": [cmp(CLOSE, ">", i) for i in range(MAX_RULE_CONDITIONS + 1)]})
+
+
+@pytest.mark.parametrize("bad", ["BTC", "btc/usdt", "BTC-USDT", "BTC/", "/USDT", "BTC/USDT/X", " BTC/USDT"])
+def test_symbol_must_be_base_slash_quote(bad):
+    never = cmp(CLOSE, "<", -1)
+    spec = {"name": "t", "symbol": bad, "timeframe": "1h", "size_pct": "0.02", "entry": never, "exit": never}
+    with pytest.raises(ValidationError):
+        Strategy.model_validate(spec)
