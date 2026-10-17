@@ -56,6 +56,18 @@ tradebot status                      # latido, kill switch, efectivo y posición
 - `status` dice `POSIBLEMENTE CAÍDO` si pasaron más de 2 minutos de la hora esperada del siguiente ciclo. Hoy nada te avisa por sí solo: hay que mirarlo.
 - El modo real no existe: `TRADING_MODE` distinto de `paper` se rechaza.
 
+### Panel en vivo
+
+```
+tradebot watch rebote-rsi             # se refresca cada 30 s; Ctrl+C para salir
+tradebot watch rebote-rsi --once      # dibuja una vez (útil para copiar y pegar)
+```
+
+- Ábrelo en **otra consola** mientras corre `tradebot paper`. Es de **solo lectura**: no envía órdenes ni cambia estado.
+- Muestra latido del bot, kill switch, precio en vivo con mini-gráfico, capital, posición (P&L latente y distancia al stop-loss), cada condición de la regla con el valor actual del indicador, últimas operaciones y últimos eventos de auditoría.
+- No usa la clave para operar. Con `TRADEBOT_KEY` definida también comprueba que la estrategia siga aprobada; sin ella lo avisa en una nota.
+- El precio "en vivo" es solo informativo: el bot decide con velas **cerradas**. Si no hay precio en vivo, muestra el último cierre.
+
 ## 3. Algo no cuadra: investigar
 
 | Síntoma | Qué hacer |

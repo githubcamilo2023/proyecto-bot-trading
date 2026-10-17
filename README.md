@@ -36,7 +36,8 @@ src/tradebot/
   backtest/        # simulación vela a vela con comisiones, deslizamiento y motor de riesgo
   llm/             # directriz en lenguaje natural -> estrategia validada (sin aprobar)
   execution/       # broker paper persistente, ciclo del bot, bucle con latido y freno automático
-  cli.py           # backtest, propose, show, approve, paper, status, kill, release, audit-verify
+  watch.py         # panel de consola de solo lectura (tradebot watch)
+  cli.py           # backtest, propose, show, approve, paper, status, watch, kill, release, audit-verify
 examples/          # estrategias de ejemplo (JSON)
 tests/
 docs/              # modelo de amenazas, runbook, lista para pasar a real
@@ -86,6 +87,7 @@ El LLM solo propone: su salida debe cumplir el esquema estricto y queda guardada
 tradebot paper rebote-rsi --once   # un ciclo de prueba (la estrategia debe estar aprobada)
 tradebot paper rebote-rsi          # continuo, un ciclo por vela
 tradebot status                    # ¿está vivo? kill switch, efectivo, posición
+tradebot watch rebote-rsi          # panel en vivo (otra consola): precio, posición, señales, eventos
 ```
 
 Opera con dinero **simulado** y datos reales, con las mismas reglas de riesgo, stop-loss y auditoría. Es idempotente (reiniciar no duplica órdenes), no opera con datos viejos o con huecos, y se detiene solo (con el kill switch activado) tras 5 fallos seguidos. El modo real no existe todavía. Ver [ADR 0007](docs/adr/0007-ejecucion-paper-idempotente.md).

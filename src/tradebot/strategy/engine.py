@@ -1,9 +1,11 @@
 import operator
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
 from tradebot.models import Candle
 from tradebot.strategy import indicators as ind
+from tradebot.strategy.describe import cmp_text
 from tradebot.strategy.rules import AllOf, AnyOf, Close, Cmp, Cond, Moving, Operand, Strategy
 
 
@@ -66,3 +68,37 @@ def signal(strategy: Strategy, candles: list[Candle], in_position: bool) -> Sign
     if in_position:
         return Signal.SELL if _eval(strategy.exit, closes) else Signal.HOLD
     return Signal.BUY if _eval(strategy.entry, closes) else Signal.HOLD
+
+
+@dataclass(frozen=True, slots=True)
+class Check:
+    """Una línea de la explicación: una comparación (con sus valores de hoy) o un grupo TODAS/ALGUNA."""
+
+    text: str
+    met: bool
+    depth: int
+    left: Decimal | None = None
+    right: Decimal | None = None
+
+
+def explain(cond: Cond, candles: list[Candle], depth: int = 0) -> list[Check]:
+    """Cómo está cada condición AHORA (valores reales del indicador). Solo para mostrar: no decide nada."""
+    closes = [c.close for c in candles]
+    match cond:
+        case AllOf() | AnyOf():
+            head = "TODAS estas condiciones" if isinstance(cond, AllOf) else "ALGUNA de estas condiciones"
+            return [
+                Check(head, _eval(cond, closes), depth),
+                *(ch for x in cond.of for ch in explain(x, candles, depth + 1)),
+            ]
+        case Cmp():
+            return [
+                Check(
+                    cmp_text(cond),
+                    _eval(cond, closes),
+                    depth,
+                    _value(cond.left, closes),
+                    _value(cond.right, closes),
+                )
+            ]
+    raise AssertionError("condición no contemplada")  # pragma: no cover

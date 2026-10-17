@@ -39,3 +39,7 @@ class CcxtSource:
             for ts, r in sorted(rows.items())
             if datetime.fromtimestamp(ts / 1000, UTC) <= cutoff
         ]
+
+    def last_price(self, symbol: str) -> Decimal:
+        """Último precio negociado (público, solo para mostrar; las decisiones usan velas cerradas)."""
+        return Decimal(str(self.ex.fetch_ticker(symbol)["last"]))

@@ -19,7 +19,7 @@ _OPS = {
 _KINDS = {"sma": "la media simple de {p} velas", "ema": "la media exponencial de {p} velas"}
 
 
-def _operand(o: Operand) -> str:
+def operand_text(o: Operand) -> str:
     match o:
         case Close():
             return "el precio de cierre"
@@ -32,11 +32,15 @@ def _operand(o: Operand) -> str:
     raise AssertionError("operando no contemplado")  # pragma: no cover
 
 
+def cmp_text(c: Cmp) -> str:
+    return f"{operand_text(c.left)} {_OPS[c.op]} {operand_text(c.right)}"
+
+
 def _cond(c: Cond, depth: int = 0) -> list[str]:
     pad = "  " * depth
     match c:
         case Cmp():
-            return [f"{pad}- {_operand(c.left)} {_OPS[c.op]} {_operand(c.right)}"]
+            return [f"{pad}- {cmp_text(c)}"]
         case AllOf() | AnyOf():
             head = "TODAS estas condiciones" if isinstance(c, AllOf) else "ALGUNA de estas condiciones"
             return [f"{pad}- {head}:", *(ln for x in c.of for ln in _cond(x, depth + 1))]

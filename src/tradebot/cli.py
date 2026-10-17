@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -26,6 +27,7 @@ from tradebot.strategy.describe import describe
 from tradebot.strategy.engine import min_candles
 from tradebot.strategy.store import ApprovalError
 from tradebot.timeframe import tf_seconds
+from tradebot.watch import Snapshot, collect, run_watch
 
 _LIM = RiskLimits()
 log = logging.getLogger("tradebot.cli")
@@ -116,6 +118,18 @@ def _parser() -> argparse.ArgumentParser:
     st.add_argument("--kill-state", default=DEFAULT_STATE)
     st.add_argument("--heartbeat", default=DEFAULT_HEARTBEAT)
 
+    w = sub.add_parser("watch", help="panel en vivo de SOLO LECTURA: precio, posición, señales y eventos")
+    w.add_argument("name", help="nombre de la estrategia que corre el bot")
+    w.add_argument("--interval", type=float, default=30.0, help="segundos entre refrescos (30)")
+    w.add_argument("--once", action="store_true", help="dibuja una vez y sale")
+    w.add_argument("--no-color", action="store_true", help="sin colores")
+    w.add_argument("--exchange", default="binance")
+    w.add_argument("--db", default=":memory:", help="caché de velas del panel (en memoria por defecto)")
+    w.add_argument("--strategies-dir", default="strategies")
+    w.add_argument("--state", default=DEFAULT_PAPER)
+    w.add_argument("--kill-state", default=DEFAULT_STATE)
+    w.add_argument("--heartbeat", default=DEFAULT_HEARTBEAT)
+
     sub.add_parser("audit-verify", help="verifica la cadena completa del registro de auditoría")
     return p
 
@@ -151,6 +165,8 @@ def main(
             return _paper(a, source, out)
         if a.cmd == "status":
             return _status(a, out)
+        if a.cmd == "watch":
+            return _watch(a, source, out)
         return _admin(a, out)
 
 
@@ -342,3 +358,65 @@ def _status(a: argparse.Namespace, out: Callable[[str], object]) -> int:
     held = "ninguna" if pos is None else f"{pos.qty} {pos.symbol} desde {pos.entry_price:.2f}"
     out(f"Efectivo: {broker.cash:,.2f} · Posición: {held} · Órdenes ejecutadas: {len(broker.fills)}")
     return 0
+
+
+def _watch(a: argparse.Namespace, source: CandleSource | None, out: Callable[[str], object]) -> int:
+    """Panel de solo lectura. No necesita clave; si hay TRADEBOT_KEY, además comprueba la aprobación."""
+    if a.interval < 1:
+        out("Error: --interval debe ser al menos 1 segundo")
+        return 2
+    note = ""
+    try:
+        store = StrategyStore(a.strategies_dir)
+        try:
+            strategy = StrategyStore(a.strategies_dir, key=load_key()).load_approved(a.name)
+        except MissingKeyError:
+            strategy = store.load(a.name)
+            note = "sin TRADEBOT_KEY: no se verificó la aprobación (se muestra la versión más reciente)"
+        except ApprovalError as e:
+            strategy = store.load(a.name)
+            note = f"ATENCIÓN, aprobación no válida: {e}"
+    except (OSError, ValueError) as e:
+        out(f"Error: {e}")
+        return 2
+    tty = bool(getattr(sys.stdout, "isatty", lambda: False)()) and not a.once
+    if tty:
+        os.system("")  # noqa: S605,S607 - activa los colores ANSI en la consola de Windows 10+
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+    try:
+        with CandleCache(a.db) as cache:
+            src = source or CcxtSource(a.exchange)
+            market = CachedMarketData(src, cache)
+            price_fn = getattr(src, "last_price", None)
+
+            def snap() -> Snapshot:
+                return collect(
+                    strategy,
+                    note,
+                    market,
+                    price_fn,
+                    state=a.state,
+                    kill_state=a.kill_state,
+                    heartbeat=a.heartbeat,
+                    audit=a.audit,
+                )
+
+            try:
+                return run_watch(
+                    snap,
+                    out,
+                    interval=a.interval,
+                    once=a.once,
+                    sleep=time.sleep,
+                    color=tty and not a.no_color,
+                    clear=tty,
+                )
+            except KeyboardInterrupt:
+                out("\nPanel cerrado.")
+                return 0
+    except Exception as e:  # noqa: BLE001 - frontera del CLI
+        log.exception("fallo en watch")
+        out(f"Error: {e}")
+        return 3
