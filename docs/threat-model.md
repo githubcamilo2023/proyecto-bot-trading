@@ -70,3 +70,15 @@ Leyenda: ✅ implementado y con tests · 🟡 parcial · ⬜ pendiente (con la f
 - El kill switch frena **compras nuevas**. No cierra posiciones abiertas ni cancela órdenes en el exchange (no existe esa integración todavía). Cerrar posiciones sigue siendo una decisión humana.
 - En Windows, leer `data/kill.json` justo mientras se reemplaza puede fallar un instante; el motor lo trata como "ilegible = activado" y frena compras. Es un falso positivo seguro (se resuelve solo en la siguiente orden), no un hueco.
 - Los tests prueban el comportamiento ante estos ataques con archivos manipulados, pero no sustituyen una revisión externa antes de usar dinero real.
+
+## Pre-vuelo y edición (`review`, `edit`)
+
+- **Editar no aprueba**: `tradebot edit` y la edición del menú solo crean una versión NUEVA sin aprobar; la
+  aprobada no se toca y el bot sigue usando la última versión con firma válida hasta que tú apruebes y reinicies.
+- **La IA solo propone** también al editar con `--phrase`: su salida pasa por el mismo esquema estricto y queda
+  sin aprobar.
+- **`review` es de solo lectura**: lee archivos de estrategia, la firma y el final de la auditoría (máx. 5 MB).
+  El texto que viene de la auditoría se limpia de caracteres de control antes de mostrarse (evita secuencias de
+  escape que alteren la consola).
+- **Causa visible**: si una firma no coincide (otra clave, archivo cambiado) el mensaje lo dice en vez de
+  «sin aprobar».

@@ -109,3 +109,11 @@ Lo que importa respaldar: `strategies/`, `data/audit.jsonl`, `data/kill.json` y 
 ## 7. Pendiente de operación (se completará con la fase `execution`)
 
 Alertas ante caídas o rechazos repetidos, latido del bot, reconciliación al arrancar, y procedimiento para cerrar posiciones desde el propio bot.
+
+## Antes de arrancar el bot: pre-vuelo y edición
+
+- `tradebot review NOMBRE`: qué versión aplicaría el bot, por qué, de dónde salió y los límites de riesgo.
+- `tradebot edit NOMBRE --size 3 | --stop-loss 2.5 | --phrase "..."`: crea una versión nueva SIN aprobar.
+  Después: `backtest`, `approve NOMBRE N` y reiniciar el bot (el bot en marcha no cambia solo).
+- Si el panel o `review` dicen «firma de aprobación inválida»: la consola tiene otra `TRADEBOT_KEY` que la usada
+  al aprobar, o el archivo cambió. Pon la clave correcta; si la perdiste, usa la clave nueva y vuelve a aprobar.

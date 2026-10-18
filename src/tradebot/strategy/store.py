@@ -163,10 +163,12 @@ class StrategyStore:
         """La versión MÁS RECIENTE con aprobación válida. Es la única vía por la que el bot ejecuta.
         Si la última versión no está aprobada, usa la anterior aprobada y lo avisa en el log."""
         versions = self.versions(name)
+        reasons: list[str] = []
         for v in reversed(versions):
             try:
                 self.check_approval(name, v)
             except ApprovalError as e:
+                reasons.append(f"v{v}: {e}")
                 log.warning("estrategia %s v%s no ejecutable: %s", name, v, e)
                 if e.tamper:
                     try:
@@ -179,4 +181,5 @@ class StrategyStore:
             if v != versions[-1]:
                 log.warning("se usa %s v%s (aprobada); hay versiones más nuevas sin aprobar", name, v)
             return self.load(name, v)
-        raise ApprovalError(f"{name!r} no tiene ninguna versión aprobada")
+        detail = f" ({'; '.join(reasons)})" if any(r for r in reasons if "sin aprobar" not in r) else ""
+        raise ApprovalError(f"{name!r} no tiene ninguna versión aprobada válida{detail}")

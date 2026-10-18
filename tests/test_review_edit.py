@@ -164,3 +164,41 @@ def test_origin_chain_follows_edits(env):
     run(["edit", "rebote", "--version", "2", "--stop-loss", "2", *common])
     text = origin_of(audit, "rebote", 3)
     assert text and "ajustada" in text
+
+
+# --- auditoría de calidad: causa real y texto seguro -----------------------------------------------
+
+
+def test_wrong_key_reports_invalid_signature_not_just_missing(env):
+    common, store, tmp_path = env
+    other = StrategyStore(tmp_path / "s", key=("z" * 40).encode())
+    with pytest.raises(ApprovalError) as e:
+        other.load_approved("rebote")
+    assert "ninguna versión aprobada" in str(e.value) and "firma de aprobación inválida" in str(e.value)
+
+
+def test_unapproved_strategy_message_stays_simple(env):
+    common, store, tmp_path = env
+    store.save(Strategy.model_validate({**SPEC, "name": "nueva"}))
+    with pytest.raises(ApprovalError) as e:
+        store.load_approved("nueva")
+    assert "firma" not in str(e.value)
+
+
+def test_origin_strips_control_characters(env):
+    common, store, tmp_path = env
+    audit = tmp_path / "audit.jsonl"
+    audit.write_text(
+        json.dumps(
+            {
+                "action": "llm.propose",
+                "result": "ok",
+                "subject": "rebote v1",
+                "details": {"preview": "compra\x1b[2J\x07 ya"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    text = origin_of(audit, "rebote", 1)
+    assert text and "\x1b" not in text and "\x07" not in text and "compra" in text

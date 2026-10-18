@@ -5,6 +5,7 @@ lo redacta un modelo de IA: es lo que el bot realmente va a usar.
 """
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,12 @@ from tradebot.strategy.store import StrategyStore
 
 MAX_AUDIT_BYTES = 5_000_000
 MAX_HOPS = 10
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _clean(text: object) -> str:
+    """Texto de la auditoría -> una línea sin caracteres de control (evita secuencias ANSI en la consola)."""
+    return _CONTROL.sub(" ", str(text))
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,12 +70,14 @@ def origin_of(audit_path: str | Path, name: str, version: int) -> str | None:
         base_v = rec.get("from_version")
         if rec["action"] == "strategy.edit" or isinstance(base_v, int):
             before = walk(base_v, hops + 1) if isinstance(base_v, int) else None
-            step = f"luego ajustada: {rec.get('summary', 'cambios manuales')}"
+            step = f"luego ajustada: {_clean(rec.get('summary', 'cambios manuales'))}"
             if rec["action"] == "llm.propose":
-                step = f"luego editada con tu frase: «{rec.get('summary', '')}»"
+                step = f"luego editada con tu frase: «{_clean(rec.get('summary', ''))}»"
             return f"{before or 'origen anterior no consta'} → {step}"
         preview = rec.get("preview")
-        return f"la creó una IA a partir de tu frase «{preview}»" if isinstance(preview, str) else None
+        return (
+            f"la creó una IA a partir de tu frase «{_clean(preview)}»" if isinstance(preview, str) else None
+        )
 
     return walk(version, 0)
 
