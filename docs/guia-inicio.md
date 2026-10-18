@@ -83,6 +83,27 @@ sospechas de ella, revócala en la misma página de contraseñas de aplicación.
 En «Estrategias → e) Evaluar por tramos» (o `tradebot evaluate NOMBRE`) se prueba la misma estrategia en 4
 periodos seguidos. Si gana solo en uno, probablemente fue suerte. Con menos de 30 operaciones no concluye nada.
 
+## Plantillas documentadas
+
+`tradebot templates` (o menú → Crear → «Partir de una plantilla») muestra estrategias de familias con
+respaldo publicado: seguimiento de tendencia (medias de 50 y 200 días, cruces de EMAs) y reversión a la media
+dentro de tendencia (RSI 2 de Connors). Cada una dice su **fuente** y **qué esperar**. Son puntos de partida
+para evaluar, no recomendaciones. `tradebot import NOMBRE` la guarda como estrategia nueva **sin aprobar**.
+
+## Tamaño por riesgo (cómo dimensiona un profesional)
+
+Hoy cada compra usa el 2 % del capital. La «regla del 2 %» de los traders es otra cosa: **arriesgar** como
+máximo un % del capital si salta el stop-loss. Con un stop del 5 % y un riesgo del 1 %, la posición es el
+20 % del capital (1 % ÷ 5 %). Para compararlo SIN cambiar nada del bot:
+
+```powershell
+tradebot evaluate sma-filtro-tendencia --days 1460
+tradebot evaluate sma-filtro-tendencia --days 1460 --risk-pct 0.01
+```
+
+La segunda es una simulación (lo dice en la primera línea): las ganancias y las caídas serán más grandes.
+Una caída diaria por hueco puede superar el stop, así que el riesgo real a veces es mayor que el elegido.
+
 ## Cómo leer el panel en vivo
 
 - **Bot ● VIVO:** el bot late a tiempo. **● SIN LATIDO:** no responde; mira su ventana.

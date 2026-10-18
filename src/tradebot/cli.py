@@ -25,7 +25,7 @@ from tradebot.logging_setup import configure_logging, trace
 from tradebot.models import Candle, RiskLimits
 from tradebot.ports import CandleSource
 from tradebot.risk import RiskEngine
-from tradebot.strategy import Strategy, StrategyStore
+from tradebot.strategy import Strategy, StrategyStore, templates
 from tradebot.strategy.describe import describe
 from tradebot.strategy.edit import changes, edit_directive, edit_values
 from tradebot.strategy.engine import min_candles
@@ -41,6 +41,7 @@ DEFAULT_AUDIT = "data/audit.jsonl"
 DEFAULT_PAPER = "data/paper.json"
 DEFAULT_HEARTBEAT = "data/heartbeat.json"
 DEFAULT_ALERTS = "data/alerts.log"
+RISK_CAP = Decimal("0.5")  # con tamaño por riesgo, ninguna posición pasa del 50 % del capital
 EXIT_INTEGRITY = 4
 
 
@@ -70,6 +71,12 @@ def _parser() -> argparse.ArgumentParser:
     b.add_argument("--max-order-pct", type=_dec, default=_LIM.max_order_pct, help="tope por orden")
     b.add_argument("--max-daily-loss-pct", type=_dec, default=_LIM.max_daily_loss_pct, help="pérdida diaria")
     b.add_argument("--max-drawdown-pct", type=_dec, default=_LIM.max_drawdown_pct, help="caída máxima (0.10)")
+    b.add_argument(
+        "--risk-pct",
+        type=_dec,
+        default=None,
+        help="SIMULA tamaño por riesgo: 0.01 = arriesgar 1%% del capital si salta el stop (máx. 0.05)",
+    )
     b.add_argument("--exchange", default="binance", help="exchange de CCXT para las velas (binance)")
     b.add_argument("--db", default="data/candles.db", help="caché local de velas (data/candles.db)")
     b.add_argument("--strategies-dir", default="strategies", help="carpeta de estrategias guardadas")
@@ -166,6 +173,11 @@ def _parser() -> argparse.ArgumentParser:
     w.add_argument("--kill-state", default=DEFAULT_STATE)
     w.add_argument("--heartbeat", default=DEFAULT_HEARTBEAT)
 
+    sub.add_parser("templates", help="lista las plantillas documentadas (familia, fuente y qué esperar)")
+    im = sub.add_parser("import", help="guarda una plantilla (o un .json) como estrategia nueva SIN aprobar")
+    im.add_argument("source", help="nombre de plantilla (ver: tradebot templates) o ruta a un .json")
+    im.add_argument("--strategies-dir", default="strategies")
+
     g = sub.add_parser("guard", help="vigilante: avisa (correo/Telegram) si el bot deja de latir o se frena")
     g.add_argument("--interval", type=float, default=60.0, help="segundos entre revisiones (60)")
     g.add_argument("--test", action="store_true", help="envía un aviso de prueba y sale")
@@ -184,7 +196,10 @@ def _load(ref: str, store_dir: str) -> Strategy:
     p = Path(ref)
     if p.suffix == ".json" or p.is_file():
         return Strategy.model_validate_json(p.read_text(encoding="utf-8"))
-    return StrategyStore(store_dir).load(ref)
+    store = StrategyStore(store_dir)
+    if not store.versions(ref) and ref in templates.names():  # una guardada con ese nombre tiene prioridad
+        return templates.load(ref)
+    return store.load(ref)
 
 
 def main(
@@ -218,6 +233,10 @@ def main(
             return _review(a, out)
         if a.cmd == "edit":
             return _edit(a, llm, out)
+        if a.cmd == "templates":
+            return _templates(out)
+        if a.cmd == "import":
+            return _import(a, out)
         if a.cmd == "guard":
             return _guard(a, out)
         if a.cmd == "menu":
@@ -251,8 +270,18 @@ def _backtest(a: argparse.Namespace, source: CandleSource | None, out: Callable[
         if a.days < 1:
             raise ValueError("--days debe ser al menos 1")
         strategy = _load(a.strategy, a.strategies_dir)
+        max_order = a.max_order_pct
+        if a.risk_pct is not None:  # comparación "qué pasaría si": no toca la estrategia guardada
+            data = strategy.model_dump(mode="json") | {"risk_pct": str(a.risk_pct), "size_pct": str(RISK_CAP)}
+            strategy = Strategy.model_validate(data)
+            max_order = max(max_order, RISK_CAP)
+            out(
+                f"SIMULACIÓN con tamaño por riesgo: arriesga {a.risk_pct:.2%} si salta el stop de "
+                f"{strategy.stop_loss_pct:.2%} → posición de {strategy.order_fraction:.2%} del capital. "
+                f"El tope por orden sube a {max_order:.0%} SOLO en esta simulación.\n"
+            )
         limits = RiskLimits(
-            max_order_pct=a.max_order_pct,
+            max_order_pct=max_order,
             max_daily_loss_pct=a.max_daily_loss_pct,
             max_drawdown_pct=a.max_drawdown_pct,
         )
@@ -338,7 +367,7 @@ def _propose(a: argparse.Namespace, llm: LlmClient | None, out: Callable[[str], 
         out("")
         out(f"Guardada como {saved.name} v{saved.version}, SIN APROBAR.")
         out("Léela con atención: la propuso un LLM y la aprobación es tu único control.")
-        out(f"Pruébala:  tradebot backtest {saved.name} --days 365")
+        out(f"Pruébala:  tradebot evaluate {saved.name} --days 730")
         out(f"Si estás de acuerdo:  tradebot approve {saved.name} {saved.version}")
         return 0
     except (OSError, ValueError, MissingKeyError, AuditError) as e:
@@ -417,6 +446,47 @@ def _paper(a: argparse.Namespace, source: CandleSource | None, out: Callable[[st
         log.exception("fallo en paper")
         out(f"Error: {e}")
         return 3
+
+
+def _templates(out: Callable[[str], object]) -> int:
+    out("PLANTILLAS DOCUMENTADAS (puntos de partida para evaluar; ninguna garantiza resultados)\n")
+    for s in templates.catalog():
+        out(f"• {s.name}  ·  {s.symbol} {s.timeframe}  ·  stop-loss {s.stop_loss_pct * 100:.0f}%")
+        out(f"  {s.notes}\n")
+    out("Evaluar:  tradebot evaluate NOMBRE --days 1460     Adoptar:  tradebot import NOMBRE")
+    return 0
+
+
+def _import(a: argparse.Namespace, out: Callable[[str], object]) -> int:
+    """Una plantilla o un .json -> versión nueva SIN aprobar (mismo camino que una propuesta de la IA)."""
+    try:
+        p = Path(a.source)
+        if p.suffix == ".json" or p.is_file():
+            raw = p.read_text(encoding="utf-8")
+            strategy, source = Strategy.model_validate_json(raw), f"archivo {p.name}"
+        else:
+            strategy, source = templates.load(a.source), f"plantilla {a.source}"
+            raw = strategy.model_dump_json()
+        key = load_key()
+        audit = AuditLog(a.audit, key)
+        saved = StrategyStore(a.strategies_dir, key=key, audit=audit).save(strategy)
+        audit.append(
+            getpass.getuser(),
+            "strategy.import",
+            f"{saved.name} v{saved.version}",
+            "ok",
+            {"source": source, "sha256": sha256_hex(raw.encode("utf-8"))},
+        )
+    except (OSError, ValueError, MissingKeyError, AuditError) as e:  # ValueError incluye pydantic
+        out(f"Error: {e}")
+        return 2
+    out(describe(saved))
+    out("")
+    out(f"Guardada como {saved.name} v{saved.version}, SIN APROBAR (importada de la {source}).")
+    out(f"Evalúala:  tradebot evaluate {saved.name} --days 1460")
+    out(f"Pre-vuelo: tradebot review {saved.name}")
+    out(f"Si estás de acuerdo:  tradebot approve {saved.name} {saved.version}")
+    return 0
 
 
 def _guard(a: argparse.Namespace, out: Callable[[str], object]) -> int:

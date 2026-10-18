@@ -1,0 +1,30 @@
+{
+  "name": "tendencia-sma200-diaria",
+  "symbol": "BTC/USDT",
+  "timeframe": "1d",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.10",
+  "notes": "Familia: seguimiento de tendencia lento. Está comprado solo mientras el cierre diario está sobre la media de 200 días (~10 meses). Fuente: Faber, A Quantitative Approach to Tactical Asset Allocation (2007). Qué esperar: muy pocas operaciones, evita gran parte de los mercados bajistas, sufre en laterales con cruces falsos.",
+  "entry": {
+    "type": "cmp",
+    "left": {
+      "kind": "close"
+    },
+    "op": "crosses_above",
+    "right": {
+      "kind": "sma",
+      "period": 200
+    }
+  },
+  "exit": {
+    "type": "cmp",
+    "left": {
+      "kind": "close"
+    },
+    "op": "crosses_below",
+    "right": {
+      "kind": "sma",
+      "period": 200
+    }
+  }
+}

@@ -16,7 +16,7 @@ from datetime import date
 from pathlib import Path
 
 from tradebot.integrity import KEY_ENV, MIN_KEY_LEN
-from tradebot.strategy import StrategyStore
+from tradebot.strategy import StrategyStore, templates
 from tradebot.strategy.store import ApprovalError
 
 ANTHROPIC_ENV = "ANTHROPIC_API_KEY"
@@ -235,6 +235,16 @@ class Menu:
 
     def create(self) -> None:
         self.out(
+            "\n¿Cómo quieres crearla?\n  1) Partir de una plantilla documentada (recomendado para empezar)\n"
+            "  2) Escribir mi idea con mis palabras (la traduce la IA)\n  Enter) Volver"
+        )
+        how = self.ask("> ").strip()
+        if how == "1":
+            self.create_from_template()
+            return
+        if how != "2":
+            return
+        self.out(
             "\nEscribe tu idea con tus palabras. Incluye el par (por ejemplo BTC/USDT), cuándo comprar,\n"
             "cuándo vender, el tamaño de las velas (1h, 4h...) y qué % del capital usar.\n"
             "Ejemplo: compra BTC/USDT cuando el RSI de 14 baje de 30 y vende cuando suba de 55,\n"
@@ -244,6 +254,19 @@ class Menu:
         if not phrase or not self._ensure_anthropic():
             return
         code, text = self._run_capture(["propose", phrase])
+        found = re.search(r"Guardada como (\S+) v(\d+)", text)
+        if code == 0 and found:
+            self._after_save(found.group(1), found.group(2))
+
+    def create_from_template(self) -> None:
+        items = templates.catalog()
+        self.out("\nPLANTILLAS (familias documentadas; ninguna garantiza resultados):")
+        for i, s in enumerate(items, 1):
+            self.out(f"  {i}) {s.name} · {s.timeframe}\n     {s.notes}")
+        choice = self.ask("Número de la plantilla (Enter para volver): ").strip()
+        if not choice.isdigit() or not 1 <= int(choice) <= len(items):
+            return
+        code, text = self._run_capture(["import", items[int(choice) - 1].name])
         found = re.search(r"Guardada como (\S+) v(\d+)", text)
         if code == 0 and found:
             self._after_save(found.group(1), found.group(2))
@@ -266,8 +289,8 @@ class Menu:
 
     def _after_save(self, name: str, version: str | int) -> None:
         self.out("\nLéela con calma: ¿hace exactamente lo que querías?")
-        if self._yes("¿Pruebo cómo le habría ido el último año? (tarda unos segundos)", default=True):
-            self._run(["backtest", name, "--days", "365"])
+        if self._yes("¿La evalúo por tramos en los últimos años? (¿se sostiene en el tiempo?)", default=True):
+            self._run(["evaluate", name, "--days", "1460"])
         self.approve(name, version)
 
     def approve(self, name: str, version: str | int) -> None:

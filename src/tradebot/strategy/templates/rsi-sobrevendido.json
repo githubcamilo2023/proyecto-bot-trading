@@ -1,0 +1,42 @@
+{
+  "name": "rsi-sobrevendido",
+  "symbol": "BTC/USDT",
+  "timeframe": "4h",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.03",
+  "notes": "Familia: reversión a la media con filtro de tendencia. RSI de 14 bajo 30 solo si el precio está sobre la media de 200 velas de 4 h. Fuente: RSI de Wilder (New Concepts in Technical Trading Systems, 1978) con filtro de tendencia. Qué esperar: el filtro es estricto y opera muy poco.",
+  "entry": {
+    "type": "all",
+    "of": [
+      {
+        "type": "cmp",
+        "left": {
+          "kind": "rsi",
+          "period": 14
+        },
+        "op": "<",
+        "right": 30
+      },
+      {
+        "type": "cmp",
+        "left": {
+          "kind": "close"
+        },
+        "op": ">",
+        "right": {
+          "kind": "sma",
+          "period": 200
+        }
+      }
+    ]
+  },
+  "exit": {
+    "type": "cmp",
+    "left": {
+      "kind": "rsi",
+      "period": 14
+    },
+    "op": ">",
+    "right": 55
+  }
+}

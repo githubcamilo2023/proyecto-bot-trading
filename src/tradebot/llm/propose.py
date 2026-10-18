@@ -12,6 +12,7 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
+from tradebot.strategy import templates
 from tradebot.strategy.rules import Strategy
 
 log = logging.getLogger("tradebot.llm")
@@ -35,7 +36,11 @@ Reglas:
 - El símbolo va en formato BASE/QUOTE en mayúsculas (ej. BTC/USDT). Si el usuario dice solo BTC,
   usa BTC/USDT.
 - No incluyas "version". Usa nombres en minúsculas con guiones. Sin texto fuera del JSON.
-- Si el usuario no indica tamaño ni stop-loss, no los incluyas (hay valores por defecto seguros)."""
+- Si el usuario no indica tamaño ni stop-loss, no los incluyas (hay valores por defecto seguros). Usa
+  risk_pct solo si pide expresamente "arriesgar X% por operación".
+- Si la directriz encaja con una de estas familias documentadas, parte de ella y cambia solo lo que el usuario
+  pida (no inventes parámetros "optimizados"). Si no encaja, tradúcela tal cual:
+{catalog}"""
 
 
 class LlmClient(Protocol):
@@ -69,7 +74,9 @@ def propose(directive: str, client: LlmClient, attempts: int = MAX_ATTEMPTS) -> 
         raise ValueError("la directriz está vacía")
     if len(text) > MAX_DIRECTIVE:
         raise ValueError(f"la directriz supera {MAX_DIRECTIVE} caracteres")
-    system = _SYSTEM.format(schema=json.dumps(Strategy.model_json_schema(), ensure_ascii=False))
+    system = _SYSTEM.format(
+        schema=json.dumps(Strategy.model_json_schema(), ensure_ascii=False), catalog=templates.for_prompt()
+    )
     safe = text.replace("</directiva>", "").replace("<directiva>", "")  # no dejar cerrar el bloque de datos
     prompt = f"<directiva>\n{safe}\n</directiva>"
     last = "sin intentos"

@@ -11,7 +11,7 @@ python -m venv .venv
 source .venv/bin/activate       # Windows (PowerShell): .venv\Scripts\Activate.ps1
 pip install -c constraints.txt -e ".[dev,llm]"     # versiones fijadas ([llm] = SDK de Claude)
 pytest
-tradebot backtest examples/rsi-sobrevendido.json --days 365
+tradebot backtest rsi-sobrevendido --days 365   # nombre de una plantilla: ver `tradebot templates`
 ```
 
 Para aprobar estrategias y operar con auditoría hace falta la clave de integridad: ver [`docs/runbook.md`](docs/runbook.md), sección 0. El backtest no la necesita.
@@ -39,7 +39,7 @@ src/tradebot/
   watch.py         # panel de consola de solo lectura (tradebot watch)
   menu.py          # menú guiado en español (tradebot menu, o doble clic en iniciar.bat)
   cli.py           # backtest, evaluate, propose, show, review, edit, approve, paper, status, watch, guard, kill, release, audit-verify
-examples/          # estrategias de ejemplo (JSON)
+src/tradebot/strategy/templates/  # plantillas documentadas (familia, fuente, qué esperar)
 tests/
 docs/              # modelo de amenazas, runbook, lista para pasar a real
 docs/adr/          # decisiones de arquitectura
@@ -125,8 +125,8 @@ CI (`.github/workflows/ci.yml`) ejecuta todo esto en Linux (Python 3.11–3.13) 
 ## Probar una estrategia (backtest)
 
 ```bash
-tradebot backtest examples/rsi-sobrevendido.json --days 365
-# equivalente sin instalar el comando: python -m tradebot backtest examples/rsi-sobrevendido.json
+tradebot backtest rsi-sobrevendido --days 365
+# equivalente sin instalar el comando: python -m tradebot backtest rsi-sobrevendido
 ```
 
 Descarga velas públicas (necesita internet; si Binance está bloqueado en tu región, añade `--exchange kraken`), las guarda en `data/candles.db` y simula la estrategia. Imprime retorno, comparación contra comprar y mantener, caída máxima, operaciones, comisiones y órdenes rechazadas por riesgo.
@@ -141,7 +141,7 @@ Cómo simula: la señal sale del **cierre** de una vela y la orden se ejecuta en
 tradebot evaluate rebote-rsi --days 730 --segments 4
 ```
 
-Corta el historial en tramos consecutivos y simula cada uno por separado con las mismas reglas: cuántos tramos ganan, cuántos superan a comprar y mantener, peor caída máxima y total de operaciones. No optimiza nada; mide consistencia. Con menos de 30 operaciones dice que no se puede concluir. Plantillas de partida en `examples/` (RSI con filtro de tendencia, cruce de EMAs, SMA lenta).
+Corta el historial en tramos consecutivos y simula cada uno por separado con las mismas reglas: cuántos tramos ganan, cuántos superan a comprar y mantener, peor caída máxima y total de operaciones. No optimiza nada; mide consistencia. Con menos de 30 operaciones dice que no se puede concluir. Plantillas documentadas: `tradebot templates` las lista con su familia, fuente y qué esperar; `tradebot evaluate NOMBRE` las evalúa y `tradebot import NOMBRE` guarda una como estrategia nueva **sin aprobar**. La IA también las recibe como contexto, para partir de familias conocidas en vez de inventar.
 
 ## Avisos, vigilante y caída máxima
 

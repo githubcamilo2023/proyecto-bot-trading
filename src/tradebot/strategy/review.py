@@ -51,7 +51,7 @@ def _records(audit_path: str | Path) -> dict[str, dict[str, Any]]:
             continue
         if (
             isinstance(r, dict)
-            and r.get("action") in {"llm.propose", "strategy.edit"}
+            and r.get("action") in {"llm.propose", "strategy.edit", "strategy.import"}
             and r.get("result") == "ok"
             and isinstance(r.get("details"), dict)
         ):
@@ -74,6 +74,8 @@ def origin_of(audit_path: str | Path, name: str, version: int) -> str | None:
             if rec["action"] == "llm.propose":
                 step = f"luego editada con tu frase: «{_clean(rec.get('summary', ''))}»"
             return f"{before or 'origen anterior no consta'} → {step}"
+        if rec["action"] == "strategy.import":
+            return f"importada de la {_clean(rec.get('source', 'plantilla'))} (biblioteca documentada)"
         preview = rec.get("preview")
         return (
             f"la creó una IA a partir de tu frase «{_clean(preview)}»" if isinstance(preview, str) else None

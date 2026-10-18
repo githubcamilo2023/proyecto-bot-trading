@@ -75,7 +75,17 @@ class Strategy(_Model):
     stop_loss_pct: Decimal = Field(
         default=DEFAULT_STOP_LOSS_PCT, gt=0, lt=1
     )  # vende si cae tanto desde la entrada
+    # Tamaño por riesgo (opcional): la posición se calcula para que, si salta el stop, la pérdida sea
+    # `risk_pct` del capital; `size_pct` pasa a ser el TOPE de la posición. Máx. 5 % de riesgo por operación.
+    risk_pct: Decimal | None = Field(default=None, gt=0, le=Decimal("0.05"))
     notes: str = ""
+
+    @property
+    def order_fraction(self) -> Decimal:
+        """Fracción del capital que pide cada compra (el motor de riesgo puede reducirla o negarla)."""
+        if self.risk_pct is None:
+            return self.size_pct
+        return min(self.size_pct, self.risk_pct / self.stop_loss_pct)
 
     @field_validator("timeframe")
     @classmethod

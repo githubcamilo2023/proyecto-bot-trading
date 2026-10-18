@@ -1,0 +1,32 @@
+{
+  "name": "cruce-dorado-diario",
+  "symbol": "BTC/USDT",
+  "timeframe": "1d",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.10",
+  "notes": "Familia: seguimiento de tendencia (cruce dorado / cruce de la muerte). Media de 50 días cruzando la de 200. Fuente: análisis técnico clásico (Kaufman, Trading Systems and Methods). Qué esperar: entra y sale tarde, rarísimas operaciones; casi nunca habrá 30 para evaluarla.",
+  "entry": {
+    "type": "cmp",
+    "left": {
+      "kind": "sma",
+      "period": 50
+    },
+    "op": "crosses_above",
+    "right": {
+      "kind": "sma",
+      "period": 200
+    }
+  },
+  "exit": {
+    "type": "cmp",
+    "left": {
+      "kind": "sma",
+      "period": 50
+    },
+    "op": "crosses_below",
+    "right": {
+      "kind": "sma",
+      "period": 200
+    }
+  }
+}

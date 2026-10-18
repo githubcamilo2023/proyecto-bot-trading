@@ -47,6 +47,18 @@ def _cond(c: Cond, depth: int = 0) -> list[str]:
     raise AssertionError("condición no contemplada")  # pragma: no cover
 
 
+def _size_text(s: Strategy) -> str:
+    if s.risk_pct is None:
+        return (
+            f"Tamaño pedido: {s.size_pct * 100:f}% del capital por operación "
+            "(el motor de riesgo puede reducirlo o rechazarlo)."
+        )
+    return (
+        f"Tamaño por riesgo: arriesga {s.risk_pct * 100:f}% del capital si salta el stop-loss → posición de "
+        f"{s.order_fraction * 100:.2f}% del capital (tope {s.size_pct * 100:f}%; el motor de riesgo manda)."
+    )
+
+
 def describe(s: Strategy) -> str:
     lines = [
         f"Estrategia «{s.name}» (versión {s.version}) sobre {s.symbol}, velas de {s.timeframe}.",
@@ -54,8 +66,7 @@ def describe(s: Strategy) -> str:
         *_cond(s.entry),
         "VENDE cuando se cumple:",
         *_cond(s.exit),
-        f"Tamaño pedido: {s.size_pct * 100:f}% del capital por operación "
-        "(el motor de riesgo puede reducirlo o rechazarlo).",
+        _size_text(s),
         f"Stop-loss: vende si el precio cae {s.stop_loss_pct * 100:f}% desde la entrada.",
     ]
     if s.notes:

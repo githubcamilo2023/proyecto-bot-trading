@@ -1,0 +1,32 @@
+{
+  "name": "ema-cruce-tendencia",
+  "symbol": "BTC/USDT",
+  "timeframe": "4h",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.03",
+  "notes": "Familia: seguimiento de tendencia rápido. EMA 20 cruzando la EMA 50 en velas de 4 h. Fuente: cruces de medias móviles (Kaufman, Trading Systems and Methods). Qué esperar: más operaciones y más señales falsas en mercados laterales.",
+  "entry": {
+    "type": "cmp",
+    "left": {
+      "kind": "ema",
+      "period": 20
+    },
+    "op": "crosses_above",
+    "right": {
+      "kind": "ema",
+      "period": 50
+    }
+  },
+  "exit": {
+    "type": "cmp",
+    "left": {
+      "kind": "ema",
+      "period": 20
+    },
+    "op": "crosses_below",
+    "right": {
+      "kind": "ema",
+      "period": 50
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "rsi2-connors-diario",
+  "symbol": "BTC/USDT",
+  "timeframe": "1d",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.10",
+  "notes": "Familia: reversión a la media DENTRO de una tendencia alcista. Compra caídas cortas (RSI de 2 días bajo 10) solo si el precio está sobre la media de 200 días; vende al recuperar la media de 5. Fuente: Connors y Alvarez, Short Term Trading Strategies That Work (2009), pensada para acciones. Qué esperar: muchas operaciones cortas; el stop de 10% es nuestro (el original no usa stop).",
+  "entry": {
+    "type": "all",
+    "of": [
+      {
+        "type": "cmp",
+        "left": {
+          "kind": "rsi",
+          "period": 2
+        },
+        "op": "<",
+        "right": 10
+      },
+      {
+        "type": "cmp",
+        "left": {
+          "kind": "close"
+        },
+        "op": ">",
+        "right": {
+          "kind": "sma",
+          "period": 200
+        }
+      }
+    ]
+  },
+  "exit": {
+    "type": "cmp",
+    "left": {
+      "kind": "close"
+    },
+    "op": ">",
+    "right": {
+      "kind": "sma",
+      "period": 5
+    }
+  }
+}

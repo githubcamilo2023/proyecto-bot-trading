@@ -136,7 +136,7 @@ class Bot:
             return TickResult("hold", "la señal de esta vela ya se ejecutó")
         day_pnl = self._day_pnl(ref, now)
         px = ref * (1 + self.broker.slippage_pct)
-        notional = min(self.risk.equity * s.size_pct, self.broker.cash / (1 + self.broker.fee_pct))
+        notional = min(self.risk.equity * s.order_fraction, self.broker.cash / (1 + self.broker.fee_pct))
         qty = (notional / px).quantize(QTY_STEP, ROUND_DOWN)
         decision = self.risk.check(Order(s.symbol, Side.BUY, qty, px, ts), 0, day_pnl)
         if not decision.allowed:

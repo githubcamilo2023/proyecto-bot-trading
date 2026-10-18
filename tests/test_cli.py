@@ -99,17 +99,6 @@ def test_invalid_number_is_rejected_by_argparse(spec_file):
         main(["backtest", str(spec_file), "--equity", "mucho"])
 
 
-def test_all_example_strategies_are_valid():
-    from pathlib import Path
-
-    from tradebot.strategy import Strategy
-
-    files = sorted((Path(__file__).parent.parent / "examples").glob("*.json"))
-    assert len(files) >= 3
-    for f in files:
-        assert Strategy.model_validate_json(f.read_text(encoding="utf-8")).name == f.stem
-
-
 def test_evaluate_reports_each_segment_and_honest_verdict(spec_file):
     code, text = run_cli(["evaluate", str(spec_file), "--days", "60", "--db", ":memory:"], WaveSource())
     assert code == 0

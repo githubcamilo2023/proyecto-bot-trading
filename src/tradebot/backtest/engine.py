@@ -128,7 +128,7 @@ def run(
         sell_px, stopped = None, False
         if pending is Signal.BUY and pos is None:
             px = c.open * (1 + slippage_pct)
-            notional = min(eq_open * strategy.size_pct, cash / (1 + fee_pct))
+            notional = min(eq_open * strategy.order_fraction, cash / (1 + fee_pct))
             q = (notional / px).quantize(QTY_STEP, ROUND_DOWN)
             d = risk.check(Order(strategy.symbol, Side.BUY, q, px, c.ts), 0, day_pnl)
             if d.allowed:

@@ -49,6 +49,8 @@ def build(tmp_path, answers=(), secrets_=(), propose_ok=True):
                 holder["m"].out("No se pudo generar la estrategia: x")
                 return 2
             holder["m"].out("Guardada como nueva-estrategia v1, SIN APROBAR.")
+        if argv[0] == "import":
+            holder["m"].out(f"Guardada como {argv[1]} v1, SIN APROBAR (importada de la plantilla {argv[1]}).")
         if argv[0] == "edit":
             holder["m"].out("Guardada como siempre v2, SIN APROBAR (la v1 sigue igual).")
         return 0
@@ -180,9 +182,9 @@ def test_loop_survives_ctrl_c_inside_an_action(env, monkeypatch):
 
 def test_create_flow_runs_propose_backtest_and_approval(env, monkeypatch):
     monkeypatch.setenv(KEY_ENV, KEY)
-    m, _, calls, _ = build(env, answers=["compra algo", "s", "aprobar"], secrets_=["sk-ant-prueba"])
+    m, _, calls, _ = build(env, answers=["2", "compra algo", "s", "aprobar"], secrets_=["sk-ant-prueba"])
     m.create()
-    assert [c[0] for c in calls] == ["propose", "backtest", "approve"]
+    assert [c[0] for c in calls] == ["propose", "evaluate", "approve"]
     assert calls[2] == ["approve", "nueva-estrategia", "1"]
     import os
 
@@ -191,7 +193,7 @@ def test_create_flow_runs_propose_backtest_and_approval(env, monkeypatch):
 
 def test_create_without_typing_aprobar_leaves_it_pending(env, monkeypatch):
     monkeypatch.setenv(KEY_ENV, KEY)
-    m, out, calls, _ = build(env, answers=["compra algo", "n", "no sé"], secrets_=["sk-ant-prueba"])
+    m, out, calls, _ = build(env, answers=["2", "compra algo", "n", "no sé"], secrets_=["sk-ant-prueba"])
     m.create()
     assert [c[0] for c in calls] == ["propose"] and any("Queda pendiente" in o for o in out)
 
@@ -199,17 +201,17 @@ def test_create_without_typing_aprobar_leaves_it_pending(env, monkeypatch):
 def test_create_stops_if_the_model_fails_or_nothing_is_typed(env, monkeypatch):
     monkeypatch.setenv(KEY_ENV, KEY)
     monkeypatch.setenv(ANTHROPIC_ENV, "x")
-    m, _, calls, _ = build(env, answers=["compra algo"], propose_ok=False)
+    m, _, calls, _ = build(env, answers=["2", "compra algo"], propose_ok=False)
     m.create()
     assert [c[0] for c in calls] == ["propose"]
-    m2, _, calls2, _ = build(env, answers=[""])
+    m2, _, calls2, _ = build(env, answers=["2", ""])
     m2.create()
     assert calls2 == []
 
 
 def test_create_without_an_anthropic_key_cancels(env, monkeypatch):
     monkeypatch.setenv(KEY_ENV, KEY)
-    m, _, calls, _ = build(env, answers=["compra algo"], secrets_=[""])
+    m, _, calls, _ = build(env, answers=["2", "compra algo"], secrets_=[""])
     m.create()
     assert calls == []
 
@@ -393,3 +395,26 @@ def test_strategies_menu_can_evaluate_by_segments(env, monkeypatch):
     m, _, calls, _ = build(env, answers=["1", "e"])
     m.strategies_menu()
     assert calls == [["evaluate", "siempre", "--days", "730"]]
+
+
+def test_create_from_a_documented_template(env, monkeypatch):
+    from tradebot.strategy import templates
+
+    monkeypatch.setenv(KEY_ENV, KEY)
+    idx = str(templates.names().index("sma-filtro-tendencia") + 1)
+    m, out, calls, _ = build(env, answers=["1", idx, "s", "aprobar"])
+    m.create()
+    assert calls == [
+        ["import", "sma-filtro-tendencia"],
+        ["evaluate", "sma-filtro-tendencia", "--days", "1460"],
+        ["approve", "sma-filtro-tendencia", "1"],
+    ]
+    assert any("Fuente:" in o for o in out)  # el usuario ve de dónde sale cada plantilla
+
+
+def test_create_from_template_cancel_paths(env, monkeypatch):
+    monkeypatch.setenv(KEY_ENV, KEY)
+    for answers in (["1", ""], ["1", "99"], ["1", "abc"], [""]):
+        m, _, calls, _ = build(env, answers=answers)
+        m.create()
+        assert calls == []
