@@ -38,7 +38,7 @@ src/tradebot/
   execution/       # broker paper persistente, ciclo del bot, bucle con latido y freno automático
   watch.py         # panel de consola de solo lectura (tradebot watch)
   menu.py          # menú guiado en español (tradebot menu, o doble clic en iniciar.bat)
-  cli.py           # backtest, evaluate, propose, show, review, edit, approve, paper, status, watch, kill, release, audit-verify
+  cli.py           # backtest, evaluate, propose, show, review, edit, approve, paper, status, watch, guard, kill, release, audit-verify
 examples/          # estrategias de ejemplo (JSON)
 tests/
 docs/              # modelo de amenazas, runbook, lista para pasar a real
@@ -143,9 +143,11 @@ tradebot evaluate rebote-rsi --days 730 --segments 4
 
 Corta el historial en tramos consecutivos y simula cada uno por separado con las mismas reglas: cuántos tramos ganan, cuántos superan a comprar y mantener, peor caída máxima y total de operaciones. No optimiza nada; mide consistencia. Con menos de 30 operaciones dice que no se puede concluir. Plantillas de partida en `examples/` (RSI con filtro de tendencia, cruce de EMAs, SMA lenta).
 
-## Avisos y caída máxima
+## Avisos, vigilante y caída máxima
 
-`tradebot paper` escribe avisos (compras, ventas, stops, kill switch, paradas) en `data/alerts.log` y, si defines `TRADEBOT_TELEGRAM_TOKEN` y `TRADEBOT_TELEGRAM_CHAT` en la consola, también a Telegram. Si el capital cae más de `--max-drawdown-pct` (10 % por defecto) desde su máximo, se activa el kill switch (compras bloqueadas; ventas y stop-loss siguen). `tradebot release` (desde cualquier consola, también con el bot en marcha) lo libera y reinicia el máximo. `backtest` y `evaluate` simulan la misma regla, así que los resultados son comparables.
+Correo (Gmail con contraseña de aplicación: `TRADEBOT_SMTP_USER`, `TRADEBOT_SMTP_PASSWORD`, opcional `TRADEBOT_ALERT_EMAIL`) y/o Telegram, siempre definidos en la consola. `tradebot guard` vigila el latido y el kill switch y avisa al fallar y al recuperarse; `tradebot guard --test` prueba los canales. Detalle en `docs/guia-inicio.md`.
+
+`tradebot paper` escribe avisos (compras, ventas, stops, kill switch, paradas) en `data/alerts.log` y por los canales configurados (correo, Telegram). Si el capital cae más de `--max-drawdown-pct` (10 % por defecto) desde su máximo, se activa el kill switch (compras bloqueadas; ventas y stop-loss siguen). `tradebot release` (desde cualquier consola, también con el bot en marcha) lo libera y reinicia el máximo. `backtest` y `evaluate` simulan la misma regla, así que los resultados son comparables.
 
 ## Plan de un mes
 

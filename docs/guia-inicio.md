@@ -55,7 +55,28 @@ Un bot que ya está corriendo sigue con la versión anterior hasta que lo reinic
 - Los avisos quedan en `data\alerts.log`. Para recibirlos en el móvil, crea un bot de Telegram (@BotFather) y,
   en la consola donde arrancas el bot, define `$env:TRADEBOT_TELEGRAM_TOKEN` y `$env:TRADEBOT_TELEGRAM_CHAT`.
 - Si el capital cae un 10 % desde su máximo, el bot bloquea las compras por sí solo y te avisa.
-- Nada te avisa si el bot se cae por completo (PC apagado, ventana cerrada): mira el panel de vez en cuando.
+- Al iniciar el bot desde el menú se abre también el **vigilante** (`tradebot guard`): revisa cada minuto
+  y te avisa si el bot deja de latir o se activa el kill switch, y otra vez cuando se recupera. Déjalo abierto.
+- Límite: si el PC se apaga, el vigilante también. Si se suspende, avisará al despertar.
+
+### Recibir los avisos por correo (Gmail)
+
+1. En la cuenta de Gmail que enviará los avisos, activa la **verificación en 2 pasos**
+   (Cuenta de Google → Seguridad).
+2. Crea una **contraseña de aplicación** en https://myaccount.google.com/apppasswords (nombre: `tradebot`).
+   Google te muestra 16 letras: guárdalas en tu gestor de contraseñas. No es tu contraseña normal.
+3. En la consola donde arrancas el menú o el bot, antes de iniciar:
+   ```powershell
+   $env:TRADEBOT_SMTP_USER = "tu-cuenta@gmail.com"
+   $env:TRADEBOT_SMTP_PASSWORD = "las16letrasdelacontraseña"
+   $env:TRADEBOT_ALERT_EMAIL = "a-donde-llegan@gmail.com"   # opcional: por defecto, la misma cuenta
+   ```
+4. Prueba: `tradebot guard --test`. Debe llegarte un correo «TRADEBOT: Prueba de aviso…» (mira también spam).
+   Si dice **FALLÓ**, lee la pista que muestra. La más común (`SMTPServerDisconnected` o sin respuesta) es que
+   tu red o antivirus bloquea el puerto 465: define `$env:TRADEBOT_SMTP_PORT = "587"` y vuelve a probar.
+
+Usa una cuenta de Gmail dedicada al bot: la contraseña de aplicación da acceso a esa cuenta. Si la pierdes o
+sospechas de ella, revócala en la misma página de contraseñas de aplicación.
 
 ## ¿La estrategia se sostiene en el tiempo?
 

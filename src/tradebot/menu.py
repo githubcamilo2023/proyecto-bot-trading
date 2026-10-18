@@ -359,7 +359,11 @@ class Menu:
         if choice != "s":
             return
         self.launch(["paper", name])
-        self.out("Bot iniciado (revisa la otra ventana). Para detenerlo: Ctrl+C en esa ventana.")
+        self.launch(["guard"])
+        self.out(
+            "Bot iniciado (revisa la otra ventana). Para detenerlo: Ctrl+C en esa ventana.\n"
+            "También abrí el VIGILANTE: te avisa si el bot deja de latir. Déjalo abierto."
+        )
         if self._yes("¿Abro también el panel en vivo?", default=True):
             self.launch(["watch", name])
 

@@ -125,3 +125,11 @@ Alertas ante caídas o rechazos repetidos, latido del bot, reconciliación al ar
   `tradebot release` libera el kill switch y reinicia el máximo de capital.
 - `tradebot evaluate NOMBRE --days 730 --segments 4`: consistencia por tramos. Úsalo antes de aprobar y cada vez
   que cambies reglas; si ajustaste parámetros mirando el resultado, valida con datos que no hayas usado.
+
+## Vigilante y avisos por correo
+
+- `tradebot guard`: revisa cada 60 s el latido y el kill switch; avisa al fallar y al recuperarse.
+- `tradebot guard --test`: envía un aviso de prueba por todos los canales configurados.
+- Variables (solo en consola): `TRADEBOT_SMTP_USER`, `TRADEBOT_SMTP_PASSWORD` (contraseña de aplicación),
+  `TRADEBOT_ALERT_EMAIL` (opcional), `TRADEBOT_SMTP_PORT` (465 por defecto; 587 si la red bloquea el 465). Si no llega: revisar spam, que la verificación en 2 pasos esté activa y
+  `data/alerts.log` + el log de la consola (dice «no se pudo enviar el aviso por correo (Tipo)»).

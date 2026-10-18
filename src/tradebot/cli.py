@@ -11,13 +11,14 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from tradebot.alerts import make_notifier
+from tradebot.alerts import channels, config_problems, make_notifier
 from tradebot.audit import AuditError, AuditLog
 from tradebot.backtest import run
 from tradebot.backtest.evaluate import evaluate
 from tradebot.config import DEFAULT_EQUITY, FEE_PCT, SLIPPAGE_PCT
 from tradebot.data import CachedMarketData, CandleCache, CcxtSource
 from tradebot.execution import Bot, BrokerError, PaperBroker, run_loop
+from tradebot.guard import run_guard
 from tradebot.integrity import MissingKeyError, load_key, sha256_hex
 from tradebot.llm import AnthropicClient, LlmClient, LlmError, ProposalError, propose
 from tradebot.logging_setup import configure_logging, trace
@@ -165,6 +166,13 @@ def _parser() -> argparse.ArgumentParser:
     w.add_argument("--kill-state", default=DEFAULT_STATE)
     w.add_argument("--heartbeat", default=DEFAULT_HEARTBEAT)
 
+    g = sub.add_parser("guard", help="vigilante: avisa (correo/Telegram) si el bot deja de latir o se frena")
+    g.add_argument("--interval", type=float, default=60.0, help="segundos entre revisiones (60)")
+    g.add_argument("--test", action="store_true", help="envía un aviso de prueba y sale")
+    g.add_argument("--alerts", default=DEFAULT_ALERTS)
+    g.add_argument("--kill-state", default=DEFAULT_STATE)
+    g.add_argument("--heartbeat", default=DEFAULT_HEARTBEAT)
+
     sub.add_parser(
         "menu", help="menú guiado en español (también se abre al ejecutar tradebot sin argumentos)"
     )
@@ -210,6 +218,8 @@ def main(
             return _review(a, out)
         if a.cmd == "edit":
             return _edit(a, llm, out)
+        if a.cmd == "guard":
+            return _guard(a, out)
         if a.cmd == "menu":
             from tradebot.menu import run_menu  # import diferido: el menú importa este módulo
 
@@ -393,6 +403,8 @@ def _paper(a: argparse.Namespace, source: CandleSource | None, out: Callable[[st
                 out(f"{r.action}: {r.reason}")
                 return 0
             out(f"Bot en marcha: {strategy.name} v{strategy.version} (paper). Ctrl+C para detener.")
+            via = channels()
+            out(f"Avisos: {', '.join(via)} y {a.alerts}." if via else f"Avisos: solo en {a.alerts}.")
             notify(f"{strategy.name} v{strategy.version}: bot iniciado (paper).")
             try:
                 return run_loop(bot, risk, audit, Path(a.heartbeat), lambda s: time.sleep(s), notify=notify)
@@ -405,6 +417,36 @@ def _paper(a: argparse.Namespace, source: CandleSource | None, out: Callable[[st
         log.exception("fallo en paper")
         out(f"Error: {e}")
         return 3
+
+
+def _guard(a: argparse.Namespace, out: Callable[[str], object]) -> int:
+    if a.interval < 10:
+        out("Error: --interval debe ser al menos 10 segundos")
+        return 2
+    notify, via = make_notifier(a.alerts), channels()
+    out(
+        f"Avisos por: {', '.join(via)} y {a.alerts}"
+        if via
+        else f"Avisos solo en {a.alerts} (sin correo ni Telegram)"
+    )
+    if a.test:
+        for problem in config_problems():
+            out(f"ATENCIÓN: {problem}")
+        failed = notify("Prueba de aviso: si lees esto, los avisos del bot funcionan.")
+        if isinstance(failed, list) and failed:
+            out("FALLÓ el envío:")
+            for f in failed:
+                out(f"  - {f}")
+            return 3
+        out("Aviso de prueba enviado. Si no llega en unos minutos, mira la carpeta de spam.")
+        return 0
+    try:
+        return run_guard(
+            notify, out, heartbeat=a.heartbeat, kill_state=a.kill_state, interval=a.interval, sleep=time.sleep
+        )
+    except KeyboardInterrupt:
+        out("Vigilante detenido.")
+        return 0
 
 
 def _status(a: argparse.Namespace, out: Callable[[str], object]) -> int:

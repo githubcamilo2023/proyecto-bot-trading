@@ -1,10 +1,14 @@
+import os
+
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
-    """Cada test corre en un directorio temporal y sin variables de tradebot heredadas:
-    ninguna ruta por defecto (data/…) puede ensuciar el proyecto ni filtrarse entre tests."""
+    """Cada test corre en un directorio temporal y SIN variables de tradebot heredadas de tu consola:
+    ninguna ruta por defecto (data/…) ensucia el proyecto y ninguna credencial real (correo, Telegram,
+    clave) llega a un test: los tests nunca envían avisos de verdad."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("TRADEBOT_KEY", raising=False)
-    monkeypatch.delenv("TRADEBOT_LOG_LEVEL", raising=False)
+    for name in list(os.environ):
+        if name.startswith("TRADEBOT_") or name == "TRADING_MODE":
+            monkeypatch.delenv(name, raising=False)

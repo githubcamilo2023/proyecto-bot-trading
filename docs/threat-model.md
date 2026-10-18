@@ -92,3 +92,12 @@ Leyenda: ✅ implementado y con tests · 🟡 parcial · ⬜ pendiente (con la f
 - **Caída máxima**: el motor de riesgo guarda el máximo de capital junto al kill switch (`kill.peak`). Si ese
   archivo se borra o se corrompe, el máximo se reinicia con el capital actual (control secundario; el kill switch
   y la pérdida diaria siguen firmes). Activarlo bloquea compras; las ventas y el stop-loss siguen permitidos.
+
+## Avisos por correo y vigilante
+
+- **Contraseña de aplicación de Gmail** solo en variables de la consola. Da acceso a la cuenta que envía: usar una
+  cuenta dedicada al bot y revocarla si hay sospecha. Los fallos de envío se registran solo con el tipo de error.
+- **Conexión**: SMTP sobre TLS (puerto 465, certificado verificado), tiempo máximo 10 s. El texto se reduce a una
+  línea (sin saltos), así que no se pueden inyectar cabeceras de correo.
+- **El vigilante es de solo lectura**: lee el latido y el kill switch; no envía órdenes ni cambia estado. Avisa una
+  vez por cambio de estado (no inunda el correo). No cubre un PC apagado: eso requiere un servidor aparte (VPS).

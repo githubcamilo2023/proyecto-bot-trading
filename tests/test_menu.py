@@ -261,7 +261,7 @@ def test_start_bot_only_offers_approved_strategies_and_opens_both_windows(env, m
     saved_strategy(env, approved=True)
     m, _, _, launched = build(env, answers=["1", "s", "s"])
     m.start_bot()
-    assert launched == [["paper", "siempre"], ["watch", "siempre"]]
+    assert launched == [["paper", "siempre"], ["guard"], ["watch", "siempre"]]
 
 
 def test_start_bot_without_approved_strategies_or_confirmation(env, monkeypatch):
