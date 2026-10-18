@@ -24,7 +24,9 @@ from tradebot.ports import CandleSource
 from tradebot.risk import RiskEngine
 from tradebot.strategy import Strategy, StrategyStore
 from tradebot.strategy.describe import describe
+from tradebot.strategy.edit import changes, edit_directive, pct, with_values
 from tradebot.strategy.engine import min_candles
+from tradebot.strategy.review import render_review, review
 from tradebot.strategy.store import ApprovalError
 from tradebot.timeframe import tf_seconds
 from tradebot.watch import Snapshot, collect, run_watch
@@ -94,6 +96,22 @@ def _parser() -> argparse.ArgumentParser:
     sh.add_argument("--version", type=int, default=None, help="por defecto, la última")
     sh.add_argument("--strategies-dir", default="strategies")
 
+    rv = sub.add_parser(
+        "review", help="pre-vuelo: qué estrategia aplicaría el bot, por qué esa y de dónde salió"
+    )
+    rv.add_argument("name")
+    rv.add_argument("--strategies-dir", default="strategies")
+    rv.add_argument("--kill-state", default=DEFAULT_STATE)
+
+    ed = sub.add_parser("edit", help="edita una estrategia: crea una versión NUEVA sin aprobar")
+    ed.add_argument("name")
+    ed.add_argument("--version", type=int, default=None, help="versión base (por defecto, la última)")
+    ed.add_argument("--size", default=None, help="nuevo tamaño por operación, en %% (ej. 2 o 2.5)")
+    ed.add_argument("--stop-loss", default=None, help="nuevo stop-loss, en %% (ej. 3)")
+    ed.add_argument("--phrase", default=None, help="cambio de reglas descrito en una frase (usa la IA)")
+    ed.add_argument("--model", default=None, help="modelo del proveedor (por defecto TRADEBOT_LLM_MODEL)")
+    ed.add_argument("--strategies-dir", default="strategies")
+
     pp = sub.add_parser(
         "paper", help="opera una estrategia APROBADA en modo paper (simulado) con datos reales"
     )
@@ -130,6 +148,9 @@ def _parser() -> argparse.ArgumentParser:
     w.add_argument("--kill-state", default=DEFAULT_STATE)
     w.add_argument("--heartbeat", default=DEFAULT_HEARTBEAT)
 
+    sub.add_parser(
+        "menu", help="menú guiado en español (también se abre al ejecutar tradebot sin argumentos)"
+    )
     sub.add_parser("audit-verify", help="verifica la cadena completa del registro de auditoría")
     return p
 
@@ -147,7 +168,8 @@ def main(
     out: Callable[[str], object] = print,
     llm: LlmClient | None = None,
 ) -> int:
-    a = _parser().parse_args(argv)
+    args = sys.argv[1:] if argv is None else argv
+    a = _parser().parse_args(args or ["menu"])
     try:
         configure_logging(a.log_level)
     except ValueError as e:
@@ -167,6 +189,14 @@ def main(
             return _status(a, out)
         if a.cmd == "watch":
             return _watch(a, source, out)
+        if a.cmd == "review":
+            return _review(a, out)
+        if a.cmd == "edit":
+            return _edit(a, llm, out)
+        if a.cmd == "menu":
+            from tradebot.menu import run_menu  # import diferido: el menú importa este módulo
+
+            return run_menu(out=out)
         return _admin(a, out)
 
 
@@ -420,3 +450,72 @@ def _watch(a: argparse.Namespace, source: CandleSource | None, out: Callable[[st
         log.exception("fallo en watch")
         out(f"Error: {e}")
         return 3
+
+
+def _review(a: argparse.Namespace, out: Callable[[str], object]) -> int:
+    """Pre-vuelo: lo que el bot usaría si arrancara ahora. Necesita la clave para verificar la aprobación."""
+    try:
+        key = load_key()
+        r = review(StrategyStore(a.strategies_dir, key=key), a.name, a.audit)
+    except (OSError, ValueError, MissingKeyError, ApprovalError) as e:
+        out(f"Error: {e}")
+        return 2
+    out(render_review(r, _LIM, killed=RiskEngine(_LIM, Decimal(0), a.kill_state).killed))
+    return 0
+
+
+def _edit(a: argparse.Namespace, llm: LlmClient | None, out: Callable[[str], object]) -> int:
+    """Edición = versión nueva SIN aprobar (la anterior queda intacta): hay que probarla y aprobarla."""
+    actor = getpass.getuser()
+    try:
+        if a.phrase and (a.size is not None or a.stop_loss is not None):
+            raise ValueError("usa --phrase o bien --size/--stop-loss, no los dos a la vez")
+        if not a.phrase and a.size is None and a.stop_loss is None:
+            raise ValueError("indica qué cambiar: --size, --stop-loss o --phrase")
+        key = load_key()
+        audit = AuditLog(a.audit, key)
+        store = StrategyStore(a.strategies_dir, key=key, audit=audit)
+        base = store.load(a.name, a.version)
+        details: dict[str, object] = {"from_version": base.version}
+        if a.phrase:
+            digest = sha256_hex(a.phrase.encode("utf-8"))
+            try:
+                proposal = propose(edit_directive(base, a.phrase), llm or AnthropicClient(a.model))
+            except (ProposalError, LlmError) as e:
+                audit.append(
+                    actor, "llm.propose", f"{base.name} v{base.version}", "error", {"sha256": digest}
+                )
+                out(f"No se pudo aplicar el cambio: {e}")
+                return 3
+            new = proposal.strategy.model_copy(update={"name": base.name})  # una edición no cambia el nombre
+            action = "llm.propose"
+            details |= {"sha256": digest, "summary": a.phrase[:200], "attempts": proposal.attempts}
+        else:
+            size = None if a.size is None else pct(a.size)
+            stop = None if a.stop_loss is None else pct(a.stop_loss)
+            new = with_values(base, size, stop)
+            action = "strategy.edit"
+            parts = []
+            if size is not None:
+                parts.append(f"tamaño {base.size_pct * 100:.2f}% → {size * 100:.2f}%")
+            if stop is not None:
+                parts.append(f"stop-loss {base.stop_loss_pct * 100:.2f}% → {stop * 100:.2f}%")
+            details["summary"] = ", ".join(parts)
+        diff = changes(base, new)
+        if not diff:
+            out("Ese cambio no modifica nada: no se creó una versión nueva.")
+            return 0
+        saved = store.save(new)
+        audit.append(actor, action, f"{saved.name} v{saved.version}", "ok", details | {"changes": diff})
+    except (OSError, ValueError, MissingKeyError, AuditError) as e:
+        out(f"Error: {e}")
+        return 2
+    out(f"Cambios respecto a v{base.version}:")
+    for ln in diff:
+        out(f"  {ln}")
+    out("")
+    out(f"Guardada como {saved.name} v{saved.version}, SIN APROBAR (la v{base.version} sigue igual).")
+    out(f"Pruébala:  tradebot backtest {saved.name} --days 365")
+    out(f"Si estás de acuerdo:  tradebot approve {saved.name} {saved.version}")
+    out("Un bot ya en marcha seguirá con la versión anterior hasta que lo reinicies.")
+    return 0

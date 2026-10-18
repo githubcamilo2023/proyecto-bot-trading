@@ -37,6 +37,7 @@ src/tradebot/
   llm/             # directriz en lenguaje natural -> estrategia validada (sin aprobar)
   execution/       # broker paper persistente, ciclo del bot, bucle con latido y freno automático
   watch.py         # panel de consola de solo lectura (tradebot watch)
+  menu.py          # menú guiado en español (tradebot menu, o doble clic en iniciar.bat)
   cli.py           # backtest, propose, show, approve, paper, status, watch, kill, release, audit-verify
 examples/          # estrategias de ejemplo (JSON)
 tests/
@@ -80,6 +81,10 @@ tradebot approve rebote-rsi 1          # solo tú; sin esto el bot no la ejecuta
 En los ejemplos, `rebote-rsi` es el nombre de la estrategia y `1` su versión: cámbialos por los tuyos (los muestra `propose` al guardar). No escribas los símbolos `<` `>`: en PowerShell están reservados.
 
 El LLM solo propone: su salida debe cumplir el esquema estricto y queda guardada **sin aprobar**. No ejecuta órdenes ni ve claves. Detalles en [ADR 0006](docs/adr/0006-llm-propone-humano-aprueba.md).
+
+## Si empiezas ahora
+
+Haz doble clic en **`iniciar.bat`** (o ejecuta `tradebot`): abre un menú guiado en español. Lee la [guía de inicio](docs/guia-inicio.md).
 
 ## Paper trading
 
