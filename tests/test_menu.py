@@ -385,3 +385,11 @@ def test_edit_strategy_cancel_paths(env, monkeypatch):
     assert calls == []
     m.edit_strategy("no-existe", 1)
     assert calls == []
+
+
+def test_strategies_menu_can_evaluate_by_segments(env, monkeypatch):
+    monkeypatch.setenv(KEY_ENV, KEY)
+    saved_strategy(env, approved=True)
+    m, _, calls, _ = build(env, answers=["1", "e"])
+    m.strategies_menu()
+    assert calls == [["evaluate", "siempre", "--days", "730"]]

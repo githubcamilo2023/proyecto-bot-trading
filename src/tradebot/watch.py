@@ -48,7 +48,7 @@ class Snapshot:
     day_start: Decimal | None
     position: Position | None
     fills: list[Fill]
-    killed: bool
+    killed: bool | str  # False, True o el motivo guardado (texto)
     heartbeat: Heartbeat | None | str  # None = sin latido; str = problema ("ilegible")
     entry: list[Check]
     exit: list[Check]
@@ -136,8 +136,9 @@ def collect(
     )
 
 
-def _killed(kill_state: str | Path) -> bool:
-    return RiskEngine(RiskLimits(), Decimal(0), kill_state).killed
+def _killed(kill_state: str | Path) -> bool | str:
+    r = RiskEngine(RiskLimits(), Decimal(0), kill_state)
+    return (r.kill_reason() or True) if r.killed else False
 
 
 # --- dibujo ------------------------------------------------------------------------------------
@@ -173,141 +174,161 @@ def _pct(x: Decimal) -> str:
     return f"{x * 100:+.2f}%"
 
 
-def render(s: Snapshot, color: bool = True) -> str:
+Paint = Callable[..., str]
+
+
+def _painter(color: bool) -> Paint:
     def paint(text: str, *styles: str) -> str:
         if not color:
             return text
         return "".join(f"\x1b[{_CODES[st]}m" for st in styles) + text + "\x1b[0m"
 
-    def pnl_color(x: Decimal) -> str:
-        return "green" if x > 0 else "red" if x < 0 else "dim"
+    return paint
 
-    st = s.strategy
-    rule = "─" * WIDTH
-    out = [
-        paint(f" TRADEBOT · PAPER (simulado) · {st.name} v{st.version} · {st.symbol} {st.timeframe}", "bold")
-        + paint(f"   {s.now:%Y-%m-%d %H:%M:%S} UTC", "dim"),
-        rule,
-    ]
-    # estado del bot
+
+def _pnl_color(x: Decimal) -> str:
+    return "green" if x > 0 else "red" if x < 0 else "dim"
+
+
+def _bot_lines(s: Snapshot, paint: Paint) -> list[str]:
     hb = s.heartbeat
     if isinstance(hb, Heartbeat):
-        late = s.now > hb.next_due + LATE_GRACE
-        if late:
+        if s.now > hb.next_due + LATE_GRACE:
             bot = paint("● SIN LATIDO", "red", "bold") + f" (debía latir hace {_dur(s.now - hb.next_due)})"
         else:
             nxt = f"próximo ciclo en {_dur(hb.next_due - s.now)}" if hb.next_due > s.now else "ciclo en curso"
             bot = paint("● VIVO", "green", "bold") + f" · último ciclo hace {_dur(s.now - hb.ts)} · {nxt}"
-        out.append(f" Bot: {bot}")
-        out.append(paint(f"      último resultado: {hb.status} · {hb.detail}", "dim"))
+        lines = [f" Bot: {bot}", paint(f"      último resultado: {hb.status} · {hb.detail}", "dim")]
     elif hb is None:
-        out.append(" Bot: " + paint("○ sin latido", "yellow") + " (no está corriendo en modo continuo)")
+        lines = [" Bot: " + paint("○ sin latido", "yellow") + " (no está corriendo en modo continuo)"]
     else:
-        out.append(" Bot: " + paint(f"? latido {hb}", "yellow"))
-    out.append(
-        " Kill switch: "
-        + (paint("ACTIVADO (no compra)", "red", "bold") if s.killed else paint("desactivado", "green"))
-    )
+        lines = [" Bot: " + paint(f"? latido {hb}", "yellow")]
+    kill = paint("ACTIVADO (no compra)", "red", "bold") if s.killed else paint("desactivado", "green")
+    if isinstance(s.killed, str):
+        kill += paint(f" · motivo: {s.killed}", "red")
+    lines.append(f" Kill switch: {kill}")
     if s.note:
-        out.append(paint(f" Nota: {s.note}", "yellow"))
-    out.append(rule)
-    # precio
+        lines.append(paint(f" Nota: {s.note}", "yellow"))
+    return lines
+
+
+def _price_lines(s: Snapshot, paint: Paint) -> list[str]:
     if s.price is None:
-        out.append(" Precio: sin datos")
-    else:
-        move = ""
-        if s.last_close:
-            chg = (s.price - s.last_close) / s.last_close
-            move = f"  {paint(_pct(chg), pnl_color(chg))} vs último cierre ({s.last_close:,.2f})"
-        tag = "en vivo" if s.live else "último cierre (sin precio en vivo)"
-        out.append(f" Precio: {paint(f'{s.price:,.2f}', 'bold')} {st.symbol.split('/')[-1]} · {tag}{move}")
-        if s.closes:
-            n = min(len(s.closes), SPARK_CANDLES)
-            span = timedelta(seconds=tf_seconds(st.timeframe) * n)
-            out.append(
-                f" {paint(sparkline(s.closes), 'cyan')}"
-                f"  mín {min(s.closes[-n:]):,.2f} · máx {max(s.closes[-n:]):,.2f}"
-            )
-            out.append(paint(f" (últimas {n} velas de {st.timeframe} ≈ {_dur(span)})", "dim"))
-    out.append(rule)
-    # cuenta
+        return [" Precio: sin datos"]
+    st = s.strategy
+    move = ""
+    if s.last_close:
+        chg = (s.price - s.last_close) / s.last_close
+        move = f"  {paint(_pct(chg), _pnl_color(chg))} vs último cierre ({s.last_close:,.2f})"
+    tag = "en vivo" if s.live else "último cierre (sin precio en vivo)"
+    lines = [f" Precio: {paint(f'{s.price:,.2f}', 'bold')} {st.symbol.split('/')[-1]} · {tag}{move}"]
+    if s.closes:
+        n = min(len(s.closes), SPARK_CANDLES)
+        span = timedelta(seconds=tf_seconds(st.timeframe) * n)
+        lines.append(
+            f" {paint(sparkline(s.closes), 'cyan')}"
+            f"  mín {min(s.closes[-n:]):,.2f} · máx {max(s.closes[-n:]):,.2f}"
+        )
+        lines.append(paint(f" (últimas {n} velas de {st.timeframe} ≈ {_dur(span)})", "dim"))
+    return lines
+
+
+def _account_lines(s: Snapshot, paint: Paint) -> list[str]:
     if s.cash is None:
-        out.append(" Cuenta: el bot todavía no creó su estado (data/paper.json)")
+        lines = [" Cuenta: el bot todavía no creó su estado (data/paper.json)"]
     else:
         day = ""
         if s.day_start is not None and s.equity is not None:
             d = s.equity - s.day_start
-            day = f" · hoy {paint(_signed(d), pnl_color(d))}"
-        out.append(f" Capital: {_money(s.equity)} · efectivo {_money(s.cash)}{day}")
-    # posición
+            day = f" · hoy {paint(_signed(d), _pnl_color(d))}"
+        lines = [f" Capital: {_money(s.equity)} · efectivo {_money(s.cash)}{day}"]
     pos = s.position
     if pos is None:
-        out.append(" Posición: " + paint("ninguna", "dim") + " · esperando señal de COMPRA")
-    else:
-        out.append(
-            f" Posición: {paint('ABIERTA', 'bold')} {pos.qty} {pos.symbol} · entrada {pos.entry_price:,.2f}"
-            f" · desde {pos.entry_candle_ts:%Y-%m-%d %H:%M} UTC"
+        return [*lines, " Posición: " + paint("ninguna", "dim") + " · esperando señal de COMPRA"]
+    lines.append(
+        f" Posición: {paint('ABIERTA', 'bold')} {pos.qty} {pos.symbol} · entrada {pos.entry_price:,.2f}"
+        f" · desde {pos.entry_candle_ts:%Y-%m-%d %H:%M} UTC"
+    )
+    if s.price is not None:
+        value = pos.qty * s.price
+        pnl = value - pos.cost
+        lines.append(
+            f"   P&L latente: {paint(_signed(pnl), _pnl_color(pnl))}"
+            f" ({paint(_pct(pnl / pos.cost), _pnl_color(pnl))}) · valor {value:,.2f}"
         )
-        if s.price is not None:
-            value = pos.qty * s.price
-            pnl = value - pos.cost
-            out.append(
-                f"   P&L latente: {paint(_signed(pnl), pnl_color(pnl))}"
-                f" ({paint(_pct(pnl / pos.cost), pnl_color(pnl))})"
-                f" · valor {value:,.2f}"
-            )
-            stop = pos.entry_price * (1 - st.stop_loss_pct)
-            dist = (s.price - stop) / s.price
-            warn = "red" if dist < Decimal("0.01") else "yellow" if dist < Decimal("0.02") else "dim"
-            out.append(
-                f"   Stop-loss en {stop:,.2f} (-{st.stop_loss_pct * 100:.2f}% de la entrada) · "
-                + paint(f"a {dist * 100:.2f}% del precio", warn)
-            )
-    out.append(rule)
-    # señales
-    in_pos = pos is not None
-    out.append(" SEÑALES (valor actual del indicador vs lo que pide la regla)")
+        sl = s.strategy.stop_loss_pct
+        stop = pos.entry_price * (1 - sl)
+        dist = (s.price - stop) / s.price
+        warn = "red" if dist < Decimal("0.01") else "yellow" if dist < Decimal("0.02") else "dim"
+        lines.append(
+            f"   Stop-loss en {stop:,.2f} (-{sl * 100:.2f}% de la entrada) · "
+            + paint(f"a {dist * 100:.2f}% del precio", warn)
+        )
+    return lines
+
+
+def _check_line(c: Check, active: bool, paint: Paint) -> str:
+    mark = (paint("✓", "green") if c.met else paint("✗", "red")) if active else paint("·", "dim")
+    vals = ""
+    if c.left is not None or c.right is not None:
+        a = "sin datos" if c.left is None else f"{c.left:,.2f}"
+        b = "sin datos" if c.right is None else f"{c.right:,.2f}"
+        vals = paint(f"   [{a} vs {b}]", "dim")
+    return f"{'   ' + '  ' * c.depth}{mark} {c.text}{vals}"
+
+
+def _signal_lines(s: Snapshot, paint: Paint) -> list[str]:
+    in_pos = s.position is not None
+    lines = [" SEÑALES (valor actual del indicador vs lo que pide la regla)"]
     for title, checks, active in (("COMPRA", s.entry, not in_pos), ("VENTA ", s.exit, in_pos)):
-        state = (
+        why = (
             "se evalúa ahora"
             if active
-            else "inactiva" + (" (ya hay posición)" if title == "COMPRA" else " (no hay posición)")
+            else "inactiva" + (" (ya hay posición)" if in_pos else " (no hay posición)")
         )
-        head = paint(f" {title}", "bold") if active else paint(f" {title}", "dim")
-        out.append(f"{head} · {state}")
-        for c in checks:
-            pad = "   " + "  " * c.depth
-            mark = paint("✓", "green") if c.met else paint("✗", "red")
-            if not active:
-                mark = paint("·", "dim")
-            vals = ""
-            if c.left is not None or c.right is not None:
-                a = "sin datos" if c.left is None else f"{c.left:,.2f}"
-                b = "sin datos" if c.right is None else f"{c.right:,.2f}"
-                vals = paint(f"   [{a} vs {b}]", "dim")
-            out.append(f"{pad}{mark} {c.text}{vals}")
-    out.append(rule)
-    # operaciones y eventos
-    out.append(" ÚLTIMAS OPERACIONES")
+        lines.append(f"{paint(f' {title}', 'bold' if active else 'dim')} · {why}")
+        lines += [_check_line(c, active, paint) for c in checks]
+    return lines
+
+
+def _history_lines(s: Snapshot, paint: Paint) -> list[str]:
+    lines = [" ÚLTIMAS OPERACIONES"]
     if not s.fills:
-        out.append(paint("   (ninguna todavía)", "dim"))
+        lines.append(paint("   (ninguna todavía)", "dim"))
     for f in s.fills:
-        res_pnl = "" if f.pnl is None else "  P&L " + paint(_signed(f.pnl), pnl_color(f.pnl))
+        res_pnl = "" if f.pnl is None else "  P&L " + paint(_signed(f.pnl), _pnl_color(f.pnl))
         side = paint("COMPRA", "green") if f.side.value == "buy" else paint("VENTA ", "red")
-        out.append(f"   {f.ts:%m-%d %H:%M} {side} {f.qty} @ {f.price:,.2f}{res_pnl}")
-    out.append(" ÚLTIMOS EVENTOS (auditoría)")
+        lines.append(f"   {f.ts:%m-%d %H:%M} {side} {f.qty} @ {f.price:,.2f}{res_pnl}")
+    lines.append(" ÚLTIMOS EVENTOS (auditoría)")
     if not s.events:
-        out.append(paint("   (sin eventos)", "dim"))
+        lines.append(paint("   (sin eventos)", "dim"))
     for hora, action, subject, result in s.events:
         res = paint(result, "green" if result == "ok" else "yellow")
-        out.append(f"   {hora} {action:<22} {subject[:26]:<26} {res}")
-    out.append(rule)
-    out.append(
-        paint(
-            " Solo lectura: este panel no envía órdenes. Ctrl+C para salir. No es asesoría financiera.", "dim"
-        )
+        lines.append(f"   {hora} {action:<22} {subject[:26]:<26} {res}")
+    return lines
+
+
+def render(s: Snapshot, color: bool = True) -> str:
+    paint = _painter(color)
+    st = s.strategy
+    rule = "─" * WIDTH
+    head = paint(
+        f" TRADEBOT · PAPER (simulado) · {st.name} v{st.version} · {st.symbol} {st.timeframe}", "bold"
+    ) + paint(f"   {s.now:%Y-%m-%d %H:%M:%S} UTC", "dim")
+    foot = paint(
+        " Solo lectura: este panel no envía órdenes. Ctrl+C para salir. No es asesoría financiera.", "dim"
     )
-    return "\n".join(out)
+    sections = [
+        _bot_lines(s, paint),
+        _price_lines(s, paint),
+        _account_lines(s, paint),
+        _signal_lines(s, paint),
+        _history_lines(s, paint),
+    ]
+    out = [head, rule]
+    for sec in sections:
+        out += [*sec, rule]
+    return "\n".join([*out, foot])
 
 
 # --- bucle -------------------------------------------------------------------------------------

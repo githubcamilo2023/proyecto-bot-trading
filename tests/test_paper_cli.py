@@ -202,3 +202,14 @@ def test_status_flags_a_stalled_bot_and_bad_files(env):
     (tmp / "paper.json").write_text("roto")
     code, text = run_cli(["status", *paper[-6:]])
     assert code == 3 and "Latido: ilegible" in text and "ilegible o incoherente" in text
+
+
+def test_paper_once_writes_alerts_and_accepts_drawdown_limit(env):
+    base, paper, store, tmp_path = env
+    approve(store)
+    alerts = ["--alerts", str(tmp_path / "alerts.log")]
+    once = [*base, "paper", "siempre", "--once", *alerts]
+    code, text = run_cli([*once, "--max-drawdown-pct", "0.05", *paper], FreshSource())
+    assert code == 0 and text.startswith("buy:")
+    assert "buy" in (tmp_path / "alerts.log").read_text(encoding="utf-8")
+    assert run_cli([*once, "--max-drawdown-pct", "0", *paper], FreshSource())[0] == 2

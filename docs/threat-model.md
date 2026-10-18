@@ -82,3 +82,13 @@ Leyenda: ✅ implementado y con tests · 🟡 parcial · ⬜ pendiente (con la f
   escape que alteren la consola).
 - **Causa visible**: si una firma no coincide (otra clave, archivo cambiado) el mensaje lo dice en vez de
   «sin aprobar».
+
+## Avisos (Telegram) y caída máxima
+
+- **El token de Telegram** vive solo en variables de entorno de la consola (como la clave de integridad), nunca en
+  archivos ni en el repo. Los fallos de envío se registran sin la URL (que lleva el token).
+- **Salida de red nueva**: solo `api.telegram.org` por HTTPS, con tiempo máximo de 10 s, y solo si se configuran
+  ambas variables. Un aviso fallido no detiene al bot. El texto del aviso no contiene claves.
+- **Caída máxima**: el motor de riesgo guarda el máximo de capital junto al kill switch (`kill.peak`). Si ese
+  archivo se borra o se corrompe, el máximo se reinicia con el capital actual (control secundario; el kill switch
+  y la pérdida diaria siguen firmes). Activarlo bloquea compras; las ventas y el stop-loss siguen permitidos.

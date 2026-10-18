@@ -117,3 +117,11 @@ Alertas ante caídas o rechazos repetidos, latido del bot, reconciliación al ar
   Después: `backtest`, `approve NOMBRE N` y reiniciar el bot (el bot en marcha no cambia solo).
 - Si el panel o `review` dicen «firma de aprobación inválida»: la consola tiene otra `TRADEBOT_KEY` que la usada
   al aprobar, o el archivo cambió. Pon la clave correcta; si la perdiste, usa la clave nueva y vuelve a aprobar.
+
+## Avisos, caída máxima y evaluación
+
+- Avisos: `data/alerts.log` siempre; Telegram si hay `TRADEBOT_TELEGRAM_TOKEN` y `TRADEBOT_TELEGRAM_CHAT` en la consola.
+- Caída máxima: `tradebot paper NOMBRE --max-drawdown-pct 0.10` (por defecto 10 %). Tras revisar el motivo,
+  `tradebot release` libera el kill switch y reinicia el máximo de capital.
+- `tradebot evaluate NOMBRE --days 730 --segments 4`: consistencia por tramos. Úsalo antes de aprobar y cada vez
+  que cambies reglas; si ajustaste parámetros mirando el resultado, valida con datos que no hayas usado.

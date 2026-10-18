@@ -12,6 +12,13 @@ from tradebot.models import Order, RiskLimits, Side
 log = logging.getLogger("tradebot.risk")
 
 
+def _atomic_write(path: Path, text: str) -> None:
+    """Escribe vía un temporal propio de ESTE archivo y ESTE proceso: dos consolas a la vez no se pisan."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)  # atómico
+
+
 @dataclass(frozen=True, slots=True)
 class Decision:
     allowed: bool
@@ -36,6 +43,8 @@ class RiskEngine:
         self.limits, self._equity, self._audit = limits, equity, audit
         self._state = Path(state_path) if state_path else None
         self._killed = False
+        self._peak = equity  # máximo de capital visto; con state_path se guarda en <state>.peak
+        self._peak_path = self._state.with_suffix(".peak") if self._state else None
 
     @property
     def equity(self) -> Decimal:
@@ -61,26 +70,68 @@ class RiskEngine:
             log.error("estado del kill switch ilegible en %s: se asume ACTIVADO", self._state)
             return True
 
+    def kill_reason(self) -> str:
+        """Motivo guardado del kill switch activo ('' si no está activo o no consta). Solo lectura."""
+        if not self.killed:
+            return ""
+        try:
+            data = json.loads(self._state.read_text(encoding="utf-8")) if self._state else {}
+            return str(data.get("reason", ""))[:200] if isinstance(data, dict) else ""
+        except (OSError, ValueError):
+            return "estado ilegible"
+
     def _write_state(self, killed: bool, reason: str, actor: str) -> None:
         if self._state is None:
             return
         self._state.parent.mkdir(parents=True, exist_ok=True)
         record = {"killed": killed, "reason": reason, "actor": actor, "at": datetime.now(UTC).isoformat()}
-        tmp = self._state.with_suffix(".tmp")
-        tmp.write_text(json.dumps(record), encoding="utf-8")
-        os.replace(tmp, self._state)  # atómico
+        _atomic_write(self._state, json.dumps(record))
+
+    def _load_peak(self) -> Decimal | None:
+        if self._peak_path is None:
+            return self._peak
+        try:
+            return Decimal(self._peak_path.read_text(encoding="utf-8").strip())
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError, ArithmeticError):
+            log.error("máximo de capital ilegible en %s: se reinicia con el capital actual", self._peak_path)
+            return None
+
+    def observe(self, equity: Decimal) -> bool:
+        """Registra el capital. Si cae más de `max_drawdown_pct` desde su máximo, activa el kill switch
+        (bloquea compras; vender sigue permitido). True solo si lo activó en esta llamada."""
+        peak = max(self._load_peak() or equity, equity)
+        if peak != self._peak or (self._peak_path and not self._peak_path.exists()):
+            self._peak = peak
+            if self._peak_path is not None:
+                try:
+                    self._peak_path.parent.mkdir(parents=True, exist_ok=True)
+                    _atomic_write(self._peak_path, str(peak))
+                except OSError:
+                    log.exception("no se pudo guardar el máximo de capital")
+        dd = self.limits.max_drawdown_pct
+        if self.killed or equity > peak * (1 - dd):
+            return False
+        self.kill(
+            f"caída máxima del {dd:.0%} desde el máximo de capital ({peak:,.2f} → {equity:,.2f})",
+            "risk-engine",
+        )
+        return True
 
     def kill(self, reason: str = "manual", actor: str = "system") -> bool:
-        """Activa el kill switch. Surte efecto en memoria aunque falle escribir el disco.
-        Devuelve True si además quedó persistido (único caso en que frena a OTROS procesos)."""
-        self._killed = True
+        """Activa el kill switch. True si quedó persistido (único caso en que frena a OTROS procesos).
+        Si se persistió, manda el disco: así `tradebot release` desde otra consola también libera a este
+        proceso. Si no se pudo escribir (o no hay archivo), queda activado en memoria y no se puede perder."""
         log.warning("kill switch activado por %s: %s", actor, reason)
         self._try_audit(actor, "killswitch.activate", "global", "ok", {"reason": reason})
         if self._state is None:
+            self._killed = True
             return False
         try:
             self._write_state(True, reason, actor)
         except OSError:
+            self._killed = True
             log.exception("no se pudo persistir el kill switch (sigue activo en memoria)")
             return False
         return True
@@ -91,6 +142,9 @@ class RiskEngine:
             self._audit.append(actor, "killswitch.release", "global", "ok", {})
         self._write_state(False, "liberado", actor)
         self._killed = False
+        self._peak = self._equity  # tras liberar, la caída se mide desde el capital de ese momento
+        if self._peak_path is not None:
+            self._peak_path.unlink(missing_ok=True)
         log.warning("kill switch liberado por %s", actor)
 
     def check(self, order: Order, open_positions: int, daily_pnl: Decimal) -> Decision:

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from tradebot.alerts import Notify
 from tradebot.audit import AuditError, AuditLog
 from tradebot.config import MAX_TICK_FAILURES
 from tradebot.execution.bot import Bot
@@ -58,6 +59,7 @@ def run_loop(
     stop: Callable[[], bool] = lambda: False,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
     max_failures: int = MAX_TICK_FAILURES,
+    notify: Notify | None = None,
 ) -> int:
     """0 si termina de forma normal; 3 si se detuvo por fallos repetidos (con el kill switch activado)."""
     failures = 0
@@ -86,6 +88,8 @@ def run_loop(
                         )
                     except AuditError:
                         log.exception("no se pudo auditar la parada")
+                if notify:
+                    notify(f"{bot.strategy.name}: el bot se DETUVO tras {failures} fallos (kill switch).")
                 return 3
             sleep(backoff)
             continue

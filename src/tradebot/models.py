@@ -60,8 +60,10 @@ class RiskLimits:
     max_order_pct: Decimal = Decimal("0.02")
     max_daily_loss_pct: Decimal = Decimal("0.03")
     max_open_positions: int = 3
+    max_drawdown_pct: Decimal = Decimal("0.10")  # caída desde el máximo de capital que activa el kill switch
 
     def __post_init__(self) -> None:
-        pcts_ok = all(0 < p <= 1 for p in (self.max_order_pct, self.max_daily_loss_pct))
+        pcts = (self.max_order_pct, self.max_daily_loss_pct, self.max_drawdown_pct)
+        pcts_ok = all(0 < p <= 1 for p in pcts)
         if not (pcts_ok and self.max_open_positions > 0):
             raise ValueError("límites de riesgo inválidos")

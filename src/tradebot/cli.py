@@ -11,20 +11,22 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from tradebot.alerts import make_notifier
 from tradebot.audit import AuditError, AuditLog
 from tradebot.backtest import run
+from tradebot.backtest.evaluate import evaluate
 from tradebot.config import DEFAULT_EQUITY, FEE_PCT, SLIPPAGE_PCT
 from tradebot.data import CachedMarketData, CandleCache, CcxtSource
 from tradebot.execution import Bot, BrokerError, PaperBroker, run_loop
 from tradebot.integrity import MissingKeyError, load_key, sha256_hex
 from tradebot.llm import AnthropicClient, LlmClient, LlmError, ProposalError, propose
 from tradebot.logging_setup import configure_logging, trace
-from tradebot.models import RiskLimits
+from tradebot.models import Candle, RiskLimits
 from tradebot.ports import CandleSource
 from tradebot.risk import RiskEngine
 from tradebot.strategy import Strategy, StrategyStore
 from tradebot.strategy.describe import describe
-from tradebot.strategy.edit import changes, edit_directive, pct, with_values
+from tradebot.strategy.edit import changes, edit_directive, edit_values
 from tradebot.strategy.engine import min_candles
 from tradebot.strategy.review import render_review, review
 from tradebot.strategy.store import ApprovalError
@@ -37,6 +39,7 @@ DEFAULT_STATE = "data/kill.json"
 DEFAULT_AUDIT = "data/audit.jsonl"
 DEFAULT_PAPER = "data/paper.json"
 DEFAULT_HEARTBEAT = "data/heartbeat.json"
+DEFAULT_ALERTS = "data/alerts.log"
 EXIT_INTEGRITY = 4
 
 
@@ -57,7 +60,7 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--audit", default=DEFAULT_AUDIT, help=f"registro de auditoría ({DEFAULT_AUDIT})")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    b = sub.add_parser("backtest", help="simula una estrategia sobre velas históricas")
+    b = argparse.ArgumentParser(add_help=False)  # opciones comunes de backtest y evaluate
     b.add_argument("strategy", help="ruta a un .json, o nombre guardado en --strategies-dir")
     b.add_argument("--days", type=int, default=365, help="días de historia a simular (365)")
     b.add_argument("--equity", type=_dec, default=DEFAULT_EQUITY, help="capital inicial (10000)")
@@ -65,9 +68,16 @@ def _parser() -> argparse.ArgumentParser:
     b.add_argument("--slippage", type=_dec, default=SLIPPAGE_PCT, help="deslizamiento, 0.0005 = 0.05%%")
     b.add_argument("--max-order-pct", type=_dec, default=_LIM.max_order_pct, help="tope por orden")
     b.add_argument("--max-daily-loss-pct", type=_dec, default=_LIM.max_daily_loss_pct, help="pérdida diaria")
+    b.add_argument("--max-drawdown-pct", type=_dec, default=_LIM.max_drawdown_pct, help="caída máxima (0.10)")
     b.add_argument("--exchange", default="binance", help="exchange de CCXT para las velas (binance)")
     b.add_argument("--db", default="data/candles.db", help="caché local de velas (data/candles.db)")
     b.add_argument("--strategies-dir", default="strategies", help="carpeta de estrategias guardadas")
+    sub.add_parser("backtest", parents=[b], help="simula una estrategia sobre velas históricas")
+
+    ev = sub.add_parser(
+        "evaluate", parents=[b], help="backtest por tramos: ¿se sostiene en periodos distintos?"
+    )
+    ev.add_argument("--segments", type=int, default=4, help="número de tramos consecutivos (4)")
 
     a = sub.add_parser("approve", help="aprueba (con firma) una versión guardada de una estrategia")
     a.add_argument("name")
@@ -124,6 +134,13 @@ def _parser() -> argparse.ArgumentParser:
     pp.add_argument("--slippage", type=_dec, default=SLIPPAGE_PCT)
     pp.add_argument("--max-order-pct", type=_dec, default=_LIM.max_order_pct)
     pp.add_argument("--max-daily-loss-pct", type=_dec, default=_LIM.max_daily_loss_pct)
+    pp.add_argument(
+        "--max-drawdown-pct",
+        type=_dec,
+        default=_LIM.max_drawdown_pct,
+        help="caída desde el máximo que activa el kill switch (0.10)",
+    )
+    pp.add_argument("--alerts", default=DEFAULT_ALERTS, help=f"archivo de avisos ({DEFAULT_ALERTS})")
     pp.add_argument("--exchange", default="binance")
     pp.add_argument("--db", default="data/candles.db")
     pp.add_argument("--strategies-dir", default="strategies")
@@ -177,7 +194,7 @@ def main(
         return 2
     with trace():
         log.info("comando %s", a.cmd)
-        if a.cmd == "backtest":
+        if a.cmd in {"backtest", "evaluate"}:
             return _backtest(a, source, out)
         if a.cmd == "propose":
             return _propose(a, llm, out)
@@ -200,16 +217,10 @@ def main(
         return _admin(a, out)
 
 
-def _backtest(a: argparse.Namespace, source: CandleSource | None, out: Callable[[str], object]) -> int:
-    try:
-        if a.days < 1:
-            raise ValueError("--days debe ser al menos 1")
-        strategy = _load(a.strategy, a.strategies_dir)
-        limits = RiskLimits(max_order_pct=a.max_order_pct, max_daily_loss_pct=a.max_daily_loss_pct)
-    except (OSError, ValueError) as e:  # incluye la validación de pydantic
-        out(f"Error: {e}")
-        return 2
-
+def _candles_for(
+    a: argparse.Namespace, strategy: Strategy, source: CandleSource | None, out: Callable[[str], object]
+) -> list[Candle] | None:
+    """Velas para backtest/evaluate (con caché). None si no se pudieron obtener (ya avisó al usuario)."""
     need = math.ceil(a.days * 86400 / tf_seconds(strategy.timeframe)) + min_candles(strategy)
     try:
         with CandleCache(a.db) as cache:
@@ -218,10 +229,37 @@ def _backtest(a: argparse.Namespace, source: CandleSource | None, out: Callable[
     except Exception as e:  # noqa: BLE001 - frontera del CLI: mensaje claro en vez de traceback
         log.exception("fallo al obtener velas")
         out(f"Error al obtener velas: {e}")
-        return 3
+        return None
     if len(candles) < 2:
         out("Error: el exchange no devolvió velas suficientes")
+        return None
+    return candles
+
+
+def _backtest(a: argparse.Namespace, source: CandleSource | None, out: Callable[[str], object]) -> int:
+    try:
+        if a.days < 1:
+            raise ValueError("--days debe ser al menos 1")
+        strategy = _load(a.strategy, a.strategies_dir)
+        limits = RiskLimits(
+            max_order_pct=a.max_order_pct,
+            max_daily_loss_pct=a.max_daily_loss_pct,
+            max_drawdown_pct=a.max_drawdown_pct,
+        )
+    except (OSError, ValueError) as e:  # incluye la validación de pydantic
+        out(f"Error: {e}")
+        return 2
+    candles = _candles_for(a, strategy, source, out)
+    if candles is None:
         return 3
+    if a.cmd == "evaluate":
+        try:
+            ev = evaluate(strategy, candles, a.segments, limits, a.equity, a.fee, a.slippage)
+        except ValueError as e:
+            out(f"Error: {e}")
+            return 2
+        out(ev.render())
+        return 0
     out(run(strategy, candles, limits, a.equity, a.fee, a.slippage).summary())
     return 0
 
@@ -329,7 +367,11 @@ def _paper(a: argparse.Namespace, source: CandleSource | None, out: Callable[[st
         audit = AuditLog(a.audit, key)
         store = StrategyStore(a.strategies_dir, key=key, audit=audit)
         strategy = store.load_approved(a.name)
-        limits = RiskLimits(max_order_pct=a.max_order_pct, max_daily_loss_pct=a.max_daily_loss_pct)
+        limits = RiskLimits(
+            max_order_pct=a.max_order_pct,
+            max_daily_loss_pct=a.max_daily_loss_pct,
+            max_drawdown_pct=a.max_drawdown_pct,
+        )
         broker = PaperBroker(a.state, a.equity, a.fee, a.slippage)
         broker.validate_for(strategy.symbol)
         risk = RiskEngine(limits, broker.cash, a.kill_state, audit)
@@ -344,16 +386,19 @@ def _paper(a: argparse.Namespace, source: CandleSource | None, out: Callable[[st
             def still_approved() -> object:
                 return store.check_approval(strategy.name, strategy.version)
 
-            bot = Bot(strategy, market, broker, risk, audit, approval_check=still_approved)
+            notify = make_notifier(a.alerts)
+            bot = Bot(strategy, market, broker, risk, audit, approval_check=still_approved, notify=notify)
             if a.once:
                 r = bot.tick()
                 out(f"{r.action}: {r.reason}")
                 return 0
             out(f"Bot en marcha: {strategy.name} v{strategy.version} (paper). Ctrl+C para detener.")
+            notify(f"{strategy.name} v{strategy.version}: bot iniciado (paper).")
             try:
-                return run_loop(bot, risk, audit, Path(a.heartbeat), lambda s: time.sleep(s))
+                return run_loop(bot, risk, audit, Path(a.heartbeat), lambda s: time.sleep(s), notify=notify)
             except KeyboardInterrupt:
                 audit.append(actor, "bot.stop", strategy.name, "ok", {})
+                notify(f"{strategy.name}: bot detenido por el usuario.")
                 out("Bot detenido.")
                 return 0
     except Exception as e:  # noqa: BLE001 - frontera del CLI: datos/red/broker -> mensaje claro
@@ -374,8 +419,9 @@ def _status(a: argparse.Namespace, out: Callable[[str], object]) -> int:
         out("Latido: ninguno (el bot no ha corrido en modo continuo)")
     except (OSError, ValueError, KeyError):
         out("Latido: ilegible")
-    killed = RiskEngine(_LIM, Decimal(0), a.kill_state).killed
-    out("Kill switch: ACTIVADO (no compra)" if killed else "Kill switch: desactivado")
+    risk = RiskEngine(_LIM, Decimal(0), a.kill_state)
+    why = f" · motivo: {risk.kill_reason()}" if risk.kill_reason() else ""
+    out(f"Kill switch: ACTIVADO (no compra){why}" if risk.killed else "Kill switch: desactivado")
     try:
         broker = PaperBroker(a.state) if Path(a.state).exists() else None
     except BrokerError as e:
@@ -491,16 +537,8 @@ def _edit(a: argparse.Namespace, llm: LlmClient | None, out: Callable[[str], obj
             action = "llm.propose"
             details |= {"sha256": digest, "summary": a.phrase[:200], "attempts": proposal.attempts}
         else:
-            size = None if a.size is None else pct(a.size)
-            stop = None if a.stop_loss is None else pct(a.stop_loss)
-            new = with_values(base, size, stop)
+            new, details["summary"] = edit_values(base, a.size, a.stop_loss)
             action = "strategy.edit"
-            parts = []
-            if size is not None:
-                parts.append(f"tamaño {base.size_pct * 100:.2f}% → {size * 100:.2f}%")
-            if stop is not None:
-                parts.append(f"stop-loss {base.stop_loss_pct * 100:.2f}% → {stop * 100:.2f}%")
-            details["summary"] = ", ".join(parts)
         diff = changes(base, new)
         if not diff:
             out("Ese cambio no modifica nada: no se creó una versión nueva.")

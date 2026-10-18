@@ -419,3 +419,42 @@ def test_stale_approval_helper_is_wired_to_the_store(tmp_path):
     path.write_text(path.read_text().replace('"0.03"', '"0.9"'))
     with pytest.raises(ApprovalError):
         store.check_approval("t", saved.version)
+
+
+# --- avisos y caída máxima dentro del bot ---------------------------------------------------------------
+
+
+def test_bot_notifies_each_fill(tmp_path):
+    m = Market(*flat(5))
+    bot, *_ = make_bot(tmp_path, m)
+    msgs: list[str] = []
+    bot.notify = msgs.append
+    assert bot.tick().action == "buy"
+    assert len(msgs) == 1 and "buy" in msgs[0] and "(paper)" in msgs[0]
+
+
+def test_bot_trips_kill_switch_on_drawdown_and_alerts_once(tmp_path):
+    m = Market(*flat(5))
+    bot, broker, risk, _ = make_bot(tmp_path, m)
+    msgs: list[str] = []
+    bot.notify = msgs.append
+    assert bot.tick().action == "buy"
+    msgs.clear()
+    # El precio se desploma 30 %: con 2 % del capital invertido el capital baja poco, así que se fuerza
+    # un máximo previo mayor para simular una caída de capital superior al 10 %.
+    risk._peak = D(20000)
+    (tmp_path / "kill.peak").write_text("20000")
+    m.rows.append(candle(5, o=100, c=100))
+    bot.tick()
+    bot.tick()
+    assert risk.killed and sum("KILL SWITCH por caída máxima" in x for x in msgs) == 1
+
+
+def test_loop_notifies_when_it_halts(tmp_path):
+    risk = RiskEngine(RiskLimits(), D(1), tmp_path / "kill.json")
+    msgs: list[str] = []
+    code = run_loop(
+        StubBot([RuntimeError("x")] * 2), risk, None, tmp_path / "hb.json", lambda s: None,
+        max_failures=2, notify=msgs.append,
+    )  # fmt: skip
+    assert code == 3 and len(msgs) == 1 and "DETUVO" in msgs[0]

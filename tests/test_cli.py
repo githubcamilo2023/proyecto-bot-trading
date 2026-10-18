@@ -99,13 +99,37 @@ def test_invalid_number_is_rejected_by_argparse(spec_file):
         main(["backtest", str(spec_file), "--equity", "mucho"])
 
 
-def test_example_strategy_in_repo_is_valid():
+def test_all_example_strategies_are_valid():
     from pathlib import Path
 
     from tradebot.strategy import Strategy
 
-    example = Path(__file__).parent.parent / "examples" / "rsi-sobrevendido.json"
-    assert Strategy.model_validate_json(example.read_text(encoding="utf-8")).name == "rsi-sobrevendido"
+    files = sorted((Path(__file__).parent.parent / "examples").glob("*.json"))
+    assert len(files) >= 3
+    for f in files:
+        assert Strategy.model_validate_json(f.read_text(encoding="utf-8")).name == f.stem
+
+
+def test_evaluate_reports_each_segment_and_honest_verdict(spec_file):
+    code, text = run_cli(["evaluate", str(spec_file), "--days", "60", "--db", ":memory:"], WaveSource())
+    assert code == 0
+    assert "Evaluación por tramos: onda v1" in text
+    assert "Tramo 1:" in text and "Tramo 4:" in text
+    assert "Tramos con ganancia:" in text
+    assert "garantiza" in text or "Muestra pequeña" in text or "No es consistente" in text
+
+
+def test_evaluate_validates_arguments(spec_file):
+    base = ["evaluate", str(spec_file), "--db", ":memory:"]
+    assert run_cli([*base, "--segments", "1"], WaveSource())[0] == 2
+    code, text = run_cli([*base, "--days", "3", "--segments", "4"], WaveSource())
+    assert code == 2 and "muy poca historia" in text
+    assert run_cli([*base, "--days", "60"], BrokenSource())[0] == 3
+
+
+def test_backtest_summary_includes_profit_factor_when_there_are_losses(spec_file):
+    code, text = run_cli(["backtest", str(spec_file), "--days", "60", "--db", ":memory:"], WaveSource())
+    assert code == 0 and ("factor de beneficio" in text or "Salidas por stop-loss: 0" in text)
 
 
 # --- comandos de control: approve / kill / release / audit-verify --------------------------------

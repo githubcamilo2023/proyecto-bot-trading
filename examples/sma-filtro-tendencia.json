@@ -1,0 +1,10 @@
+{
+  "name": "sma-filtro-tendencia",
+  "symbol": "BTC/USDT",
+  "timeframe": "1d",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.05",
+  "notes": "Tendencia lenta: compra cuando el cierre cruza sobre la media de 50 velas; sale cuando cruza por debajo. Pocas operaciones: se necesita mucha historia para evaluarla.",
+  "entry": {"type": "cmp", "left": {"kind": "close"}, "op": "crosses_above", "right": {"kind": "sma", "period": 50}},
+  "exit": {"type": "cmp", "left": {"kind": "close"}, "op": "crosses_below", "right": {"kind": "sma", "period": 50}}
+}

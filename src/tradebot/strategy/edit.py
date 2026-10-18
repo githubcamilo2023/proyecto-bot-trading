@@ -33,6 +33,18 @@ def with_values(
     return Strategy.model_validate(data)
 
 
+def edit_values(base: Strategy, size: str | None, stop_loss: str | None) -> tuple[Strategy, str]:
+    """Cambio de tamaño y/o stop-loss (texto en %). Devuelve la estrategia nueva y un resumen legible."""
+    new_size = None if size is None else pct(size)
+    new_stop = None if stop_loss is None else pct(stop_loss)
+    parts = []
+    if new_size is not None:
+        parts.append(f"tamaño {base.size_pct * 100:.2f}% → {new_size * 100:.2f}%")
+    if new_stop is not None:
+        parts.append(f"stop-loss {base.stop_loss_pct * 100:.2f}% → {new_stop * 100:.2f}%")
+    return with_values(base, new_size, new_stop), ", ".join(parts)
+
+
 def edit_directive(s: Strategy, instruction: str) -> str:
     """Directriz para el modelo: estrategia actual + cambio pedido. La salida se valida como siempre."""
     text = instruction.strip()

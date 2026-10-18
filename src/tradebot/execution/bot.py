@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from decimal import ROUND_DOWN, Decimal
 from typing import Any
 
+from tradebot.alerts import Notify
 from tradebot.audit import AuditError, AuditLog
 from tradebot.config import MIN_WINDOW, QTY_STEP
 from tradebot.data.validate import check_candles
@@ -45,9 +46,10 @@ class Bot:
         audit: AuditLog | None = None,
         approval_check: Callable[[], object] | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        notify: Notify | None = None,
     ) -> None:
         self.strategy, self.market, self.broker, self.risk = strategy, market, broker, risk
-        self.audit, self.approval_check, self.now = audit, approval_check, now
+        self.audit, self.approval_check, self.now, self.notify = audit, approval_check, now, notify
         self._tamper_reported = False
 
     # --- auditoría y aprobación -------------------------------------------------------------
@@ -85,6 +87,11 @@ class Bot:
             self._record("bot.skip", s.name, "skip", reason=problem)
             return TickResult("skip", problem)
         last, pos = candles[-1], self.broker.position
+        if self.risk.observe(self.broker.equity(last.close)) and self.notify:
+            self.notify(
+                f"{s.name}: KILL SWITCH por caída máxima de capital. Compras bloqueadas; "
+                "las ventas y el stop-loss siguen activos. Revisa y libera con 'tradebot release'."
+            )
         if pos is not None and (stopped := self._check_stop(pos, candles, now)):
             return stopped
         if not self._approved():
@@ -147,4 +154,9 @@ class Bot:
             "order.fill", cid, "ok", kind=kind, side=fill.side, qty=fill.qty, price=fill.price, pnl=fill.pnl
         )
         log.info("%s ejecutada: %s %s @ %s", kind, fill.side, fill.qty, fill.price)
+        if self.notify:
+            gain = "" if fill.pnl is None else f" · resultado {fill.pnl:+,.2f}"
+            self.notify(
+                f"{self.strategy.name}: {kind} {fill.side} {fill.qty} @ {fill.price:,.2f} (paper){gain}"
+            )
         return TickResult(kind, f"{fill.side} {fill.qty} @ {fill.price:.2f}")

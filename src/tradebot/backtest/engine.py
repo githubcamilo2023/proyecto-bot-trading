@@ -62,6 +62,13 @@ class Result:
     def win_rate(self) -> Decimal | None:
         return Decimal(sum(t.pnl > 0 for t in self.trades)) / len(self.trades) if self.trades else None
 
+    @property
+    def profit_factor(self) -> Decimal | None:
+        """Ganancias brutas / pérdidas brutas. None si no hay pérdidas que dividir."""
+        losses = -sum((t.pnl for t in self.trades if t.pnl < 0), ZERO)
+        wins = sum((t.pnl for t in self.trades if t.pnl > 0), ZERO)
+        return wins / losses if losses > 0 else None
+
     def summary(self) -> str:
         wr = "—" if self.win_rate is None else f"{self.win_rate:.1%}"
         lines = [
@@ -71,11 +78,16 @@ class Result:
             f"Comprar y mantener: {self.buy_hold_return:+.2%}",
             f"Caída máxima: {self.max_drawdown:.2%}",
             f"Operaciones cerradas: {len(self.trades)} · aciertos {wr} · comisiones {self.fees:,.2f}",
-            f"Salidas por stop-loss: {sum(t.stopped for t in self.trades)}",
+            f"Salidas por stop-loss: {sum(t.stopped for t in self.trades)}"
+            + ("" if self.profit_factor is None else f" · factor de beneficio {self.profit_factor:.2f}"),
         ]
         if self.open_at_end:
             lines.append("Hay una posición abierta al final (valorada al último cierre).")
         lines += [f"Órdenes rechazadas por riesgo: {n} × {why}" for why, n in self.rejected.items()]
+        if "kill switch activo" in self.rejected:
+            lines.append(
+                "El kill switch saltó por la caída máxima de capital: desde ahí no volvió a comprar."
+            )
         if len(self.trades) < 30:
             lines.append("Aviso: menos de 30 operaciones; la muestra es pequeña y no prueba nada.")
         return "\n".join(lines)
@@ -111,6 +123,7 @@ def run(
             day, day_start = c.ts.date(), last_equity
         eq_open = cash + (pos.qty if pos else ZERO) * c.open
         risk.set_equity(eq_open)
+        risk.observe(eq_open)  # igual que en vivo: caída máxima desde el pico -> kill switch (no más compras)
         day_pnl = eq_open - day_start
         sell_px, stopped = None, False
         if pending is Signal.BUY and pos is None:

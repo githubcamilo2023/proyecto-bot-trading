@@ -38,6 +38,11 @@ GLOSARIO RÁPIDO
   P&L             Ganancia o pérdida. "Latente" = si vendieras ahora; "realizada" = ya vendida.
   Capital         Tu dinero simulado total (efectivo + valor de la posición).
   Kill switch     Freno de emergencia: el bot deja de COMPRAR. No vende lo que ya tienes.
+  Caída máxima    Cuánto ha bajado tu capital desde su punto más alto. Al llegar al 10 % el bot
+                  activa solo el kill switch y te avisa.
+  Factor de       Ganancias totales / pérdidas totales de un backtest. Menos de 1 = pierde dinero.
+  beneficio
+  Por tramos      Probar la misma estrategia en varios periodos seguidos para ver si se sostiene.
   Auditoría       Diario inalterable de todo lo que pasó (quién aprobó, qué se compró, cuándo).
   Clave de        Contraseña que firma tus aprobaciones y la auditoría. Si la pierdes, hay que
   integridad      aprobar de nuevo. Guárdala en un gestor de contraseñas.
@@ -286,7 +291,8 @@ class Menu:
         name, version = picked
         self.out(
             f"\n«{name}» v{version}\n  a) Ver qué hace\n  b) Probar en el pasado (backtest)\n"
-            "  c) Aprobarla\n  d) Editarla (crea una versión nueva)\n  Enter) Volver"
+            "  c) Aprobarla\n  d) Editarla (crea una versión nueva)\n"
+            "  e) Evaluar por tramos (¿se sostiene en periodos distintos?)\n  Enter) Volver"
         )
         choice = self.ask("> ").strip().lower()
         if choice == "a":
@@ -297,6 +303,8 @@ class Menu:
             self.approve(name, version)
         elif choice == "d":
             self.edit_strategy(name, version)
+        elif choice == "e":
+            self._run(["evaluate", name, "--days", "730"])
 
     def edit_strategy(self, name: str, version: int) -> None:
         try:

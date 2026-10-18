@@ -1,0 +1,10 @@
+{
+  "name": "ema-cruce-tendencia",
+  "symbol": "BTC/USDT",
+  "timeframe": "4h",
+  "size_pct": "0.02",
+  "stop_loss_pct": "0.03",
+  "notes": "Seguimiento de tendencia: compra cuando la media rápida (EMA 20) cruza sobre la lenta (EMA 50); sale cuando cruza por debajo. Funciona en tendencias, sufre en laterales.",
+  "entry": {"type": "cmp", "left": {"kind": "ema", "period": 20}, "op": "crosses_above", "right": {"kind": "ema", "period": 50}},
+  "exit": {"type": "cmp", "left": {"kind": "ema", "period": 20}, "op": "crosses_below", "right": {"kind": "ema", "period": 50}}
+}

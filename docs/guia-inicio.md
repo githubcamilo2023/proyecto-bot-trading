@@ -47,6 +47,21 @@ Editar **nunca modifica** lo aprobado: crea una versión nueva sin aprobar que d
 
 Un bot que ya está corriendo sigue con la versión anterior hasta que lo reinicies.
 
+## Dejarlo corriendo en tu PC
+
+- Mientras el bot corra, el PC debe estar **encendido y despierto**: en Windows, Configuración → Sistema →
+  Energía → «Suspender» en **Nunca** (con corriente). Si se duerme, el bot se detiene.
+- No cierres la ventana del bot. Si la cierras o reinicias, vuelve a iniciarlo con el menú (opción de iniciar).
+- Los avisos quedan en `data\alerts.log`. Para recibirlos en el móvil, crea un bot de Telegram (@BotFather) y,
+  en la consola donde arrancas el bot, define `$env:TRADEBOT_TELEGRAM_TOKEN` y `$env:TRADEBOT_TELEGRAM_CHAT`.
+- Si el capital cae un 10 % desde su máximo, el bot bloquea las compras por sí solo y te avisa.
+- Nada te avisa si el bot se cae por completo (PC apagado, ventana cerrada): mira el panel de vez en cuando.
+
+## ¿La estrategia se sostiene en el tiempo?
+
+En «Estrategias → e) Evaluar por tramos» (o `tradebot evaluate NOMBRE`) se prueba la misma estrategia en 4
+periodos seguidos. Si gana solo en uno, probablemente fue suerte. Con menos de 30 operaciones no concluye nada.
+
 ## Cómo leer el panel en vivo
 
 - **Bot ● VIVO:** el bot late a tiempo. **● SIN LATIDO:** no responde; mira su ventana.

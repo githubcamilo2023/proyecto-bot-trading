@@ -38,7 +38,7 @@ src/tradebot/
   execution/       # broker paper persistente, ciclo del bot, bucle con latido y freno automático
   watch.py         # panel de consola de solo lectura (tradebot watch)
   menu.py          # menú guiado en español (tradebot menu, o doble clic en iniciar.bat)
-  cli.py           # backtest, propose, show, approve, paper, status, watch, kill, release, audit-verify
+  cli.py           # backtest, evaluate, propose, show, review, edit, approve, paper, status, watch, kill, release, audit-verify
 examples/          # estrategias de ejemplo (JSON)
 tests/
 docs/              # modelo de amenazas, runbook, lista para pasar a real
@@ -134,6 +134,18 @@ Descarga velas públicas (necesita internet; si Binance está bloqueado en tu re
 Opciones: `--days`, `--equity`, `--fee`, `--slippage`, `--max-order-pct`, `--max-daily-loss-pct`, `--exchange`, `--db`.
 
 Cómo simula: la señal sale del **cierre** de una vela y la orden se ejecuta en la **apertura de la siguiente** (sin mirar el futuro). Es spot, con una posición a la vez, y cada compra pasa por el motor de riesgo. Por defecto el riesgo permite como máximo el 2% del capital por orden, así que los retornos salen pequeños a propósito; para más exposición hay que subir `--max-order-pct` y el `size_pct` de la estrategia. Con menos de 30 operaciones el resultado no es concluyente, y un buen backtest no garantiza resultados futuros.
+
+### Evaluar si se sostiene: `evaluate`
+
+```bash
+tradebot evaluate rebote-rsi --days 730 --segments 4
+```
+
+Corta el historial en tramos consecutivos y simula cada uno por separado con las mismas reglas: cuántos tramos ganan, cuántos superan a comprar y mantener, peor caída máxima y total de operaciones. No optimiza nada; mide consistencia. Con menos de 30 operaciones dice que no se puede concluir. Plantillas de partida en `examples/` (RSI con filtro de tendencia, cruce de EMAs, SMA lenta).
+
+## Avisos y caída máxima
+
+`tradebot paper` escribe avisos (compras, ventas, stops, kill switch, paradas) en `data/alerts.log` y, si defines `TRADEBOT_TELEGRAM_TOKEN` y `TRADEBOT_TELEGRAM_CHAT` en la consola, también a Telegram. Si el capital cae más de `--max-drawdown-pct` (10 % por defecto) desde su máximo, se activa el kill switch (compras bloqueadas; ventas y stop-loss siguen). `tradebot release` (desde cualquier consola, también con el bot en marcha) lo libera y reinicia el máximo. `backtest` y `evaluate` simulan la misma regla, así que los resultados son comparables.
 
 ## Plan de un mes
 
