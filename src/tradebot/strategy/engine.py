@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 
+from tradebot.config import MIN_WINDOW
 from tradebot.models import Candle
 from tradebot.strategy import indicators as ind
 from tradebot.strategy.describe import cmp_text
@@ -59,6 +60,11 @@ def _periods(c: Cond) -> list[int]:
 def min_candles(strategy: Strategy) -> int:
     """Velas mínimas para que todo indicador y todo cruce tenga valor: el periodo mayor + 2."""
     return max([*_periods(strategy.entry), *_periods(strategy.exit), 0]) + 2
+
+
+def window(strategy: Strategy) -> int:
+    """Velas que ve la estrategia en cada decisión. UNA sola definición para bot y backtest."""
+    return max(MIN_WINDOW, 3 * min_candles(strategy))
 
 
 def signal(strategy: Strategy, candles: list[Candle], in_position: bool) -> Signal:

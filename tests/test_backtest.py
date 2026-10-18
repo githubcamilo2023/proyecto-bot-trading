@@ -63,7 +63,13 @@ def test_risk_engine_rejects_oversized_orders():
 
 
 DROP = [(10, 10), (10, 10), (10, 6), (6, 4), (4, 4), (4, 4)]
-HALF = RiskLimits(max_order_pct=D(1), max_daily_loss_pct=D("0.03"), max_drawdown_pct=D(1))  # aísla la diaria
+HALF = RiskLimits(  # aísla la pérdida diaria: sin caída máxima ni protecciones
+    max_order_pct=D(1),
+    max_daily_loss_pct=D("0.03"),
+    max_drawdown_pct=D(1),
+    cooldown_candles=0,
+    stoploss_guard_count=0,
+)
 EXIT_UNDER_5 = cmp(CLOSE, "<", 5)
 
 
@@ -75,7 +81,9 @@ def test_daily_loss_limit_blocks_new_buys_and_drawdown_is_measured():
 
 
 def test_max_drawdown_stops_new_buys_like_the_live_bot():
-    limits = RiskLimits(max_order_pct=D(1), max_daily_loss_pct=D(1), max_drawdown_pct=D("0.10"))
+    limits = RiskLimits(
+        max_order_pct=D(1), max_daily_loss_pct=D(1), max_drawdown_pct=D("0.10"), cooldown_candles=0
+    )
     c = bars(DROP, step=timedelta(hours=5))  # días distintos: la pérdida diaria no interviene
     r = run(strat(ALWAYS, EXIT_UNDER_5, size="0.5", stop="0.99"), c, limits, D(10000), **FREE)
     assert len(r.trades) == 1 and not r.open_at_end  # tras caer 30 % ya no vuelve a comprar

@@ -51,6 +51,8 @@ def build(tmp_path, answers=(), secrets_=(), propose_ok=True):
             holder["m"].out("Guardada como nueva-estrategia v1, SIN APROBAR.")
         if argv[0] == "import":
             holder["m"].out(f"Guardada como {argv[1]} v1, SIN APROBAR (importada de la plantilla {argv[1]}).")
+        if argv[0] == "report":
+            holder["m"].out("Informe con gráfico: C:/x/siempre-v1.html  (ábrelo con doble clic)")
         if argv[0] == "edit":
             holder["m"].out("Guardada como siempre v2, SIN APROBAR (la v1 sigue igual).")
         return 0
@@ -394,7 +396,7 @@ def test_strategies_menu_can_evaluate_by_segments(env, monkeypatch):
     saved_strategy(env, approved=True)
     m, _, calls, _ = build(env, answers=["1", "e"])
     m.strategies_menu()
-    assert calls == [["evaluate", "siempre", "--days", "730"]]
+    assert calls == [["evaluate", "siempre", "--days", "1460"]]
 
 
 def test_create_from_a_documented_template(env, monkeypatch):
@@ -418,3 +420,13 @@ def test_create_from_template_cancel_paths(env, monkeypatch):
         m, _, calls, _ = build(env, answers=answers)
         m.create()
         assert calls == []
+
+
+def test_strategies_menu_builds_and_opens_the_report(env, monkeypatch):
+    monkeypatch.setenv(KEY_ENV, KEY)
+    saved_strategy(env, approved=True)
+    m, _, calls, _ = build(env, answers=["1", "f"])
+    opened: list[str] = []
+    m.open_file = opened.append
+    m.strategies_menu()
+    assert calls == [["report", "siempre", "--days", "1460"]] and opened == ["C:/x/siempre-v1.html"]

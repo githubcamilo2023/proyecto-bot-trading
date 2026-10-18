@@ -104,6 +104,18 @@ tradebot evaluate sma-filtro-tendencia --days 1460 --risk-pct 0.01
 La segunda es una simulación (lo dice en la primera línea): las ganancias y las caídas serán más grandes.
 Una caída diaria por hueco puede superar el stop, así que el riesgo real a veces es mayor que el elegido.
 
+## Ver las operaciones en un gráfico
+
+Menú → Estrategias → elige una → «f) Informe con gráfico», o `tradebot report NOMBRE --days 1460`. Se abre en el
+navegador: precio con ▲ compras y ▼ ventas (pasa el mouse para ver el detalle), tu capital en el tiempo, el
+resultado de cada mes, cada operación con su motivo de salida y, si las hubo, las compras que frenó el motor
+de riesgo y por qué.
+
+## Frenos automáticos (protecciones)
+
+Además del stop-loss, la pérdida diaria y la caída máxima, el bot no vuelve a comprar en la vela siguiente a
+una venta, y si saltan 3 stop-loss en poco tiempo hace una pausa. Se ven en el pre-vuelo.
+
 ## Cómo leer el panel en vivo
 
 - **Bot ● VIVO:** el bot late a tiempo. **● SIN LATIDO:** no responde; mira su ventana.

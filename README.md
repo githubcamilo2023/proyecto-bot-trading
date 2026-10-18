@@ -38,7 +38,7 @@ src/tradebot/
   execution/       # broker paper persistente, ciclo del bot, bucle con latido y freno automático
   watch.py         # panel de consola de solo lectura (tradebot watch)
   menu.py          # menú guiado en español (tradebot menu, o doble clic en iniciar.bat)
-  cli.py           # backtest, evaluate, propose, show, review, edit, approve, paper, status, watch, guard, kill, release, audit-verify
+  cli.py           # backtest, evaluate, report, templates, import, propose, show, review, edit, approve, paper, status, watch, guard, kill, release, audit-verify
 src/tradebot/strategy/templates/  # plantillas documentadas (familia, fuente, qué esperar)
 tests/
 docs/              # modelo de amenazas, runbook, lista para pasar a real
@@ -142,6 +142,13 @@ tradebot evaluate rebote-rsi --days 730 --segments 4
 ```
 
 Corta el historial en tramos consecutivos y simula cada uno por separado con las mismas reglas: cuántos tramos ganan, cuántos superan a comprar y mantener, peor caída máxima y total de operaciones. No optimiza nada; mide consistencia. Con menos de 30 operaciones dice que no se puede concluir. Plantillas documentadas: `tradebot templates` las lista con su familia, fuente y qué esperar; `tradebot evaluate NOMBRE` las evalúa y `tradebot import NOMBRE` guarda una como estrategia nueva **sin aprobar**. La IA también las recibe como contexto, para partir de familias conocidas en vez de inventar.
+
+## Protecciones, verificaciones e informe (ideas tomadas de freqtrade)
+
+- **Protecciones** del motor de riesgo (bot y backtest por igual): espera de 1 vela completa tras vender y pausa de 12 velas si saltan 3 stop-loss en 24 velas. Solo frenan compras.
+- **`evaluate`** termina con VERIFICACIONES: datos futuros (imposibles por diseño), ventana (las decisiones no cambian si el indicador ve el doble de historia) y estabilidad (periodos −20 % / +20 %: si el resultado cambia de signo, es frágil).
+- **`tradebot report NOMBRE --days 1460`** genera un HTML autocontenido con el gráfico del precio y las compras/ventas, la curva de capital, el resultado por mes y la tabla de operaciones (menú → Estrategias → f).
+- Hoja de ruta completa en [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Avisos, vigilante y caída máxima
 

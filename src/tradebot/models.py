@@ -61,9 +61,20 @@ class RiskLimits:
     max_daily_loss_pct: Decimal = Decimal("0.03")
     max_open_positions: int = 3
     max_drawdown_pct: Decimal = Decimal("0.10")  # caída desde el máximo de capital que activa el kill switch
+    # protecciones (en velas de la estrategia; 0 = desactivada)
+    cooldown_candles: int = 1  # velas completas de espera tras una venta antes de volver a comprar
+    stoploss_guard_count: int = 3  # tantos stop-loss...
+    stoploss_guard_window: int = 24  # ...dentro de estas velas...
+    stoploss_guard_pause: int = 12  # ...pausan las compras estas velas desde el último
 
     def __post_init__(self) -> None:
         pcts = (self.max_order_pct, self.max_daily_loss_pct, self.max_drawdown_pct)
         pcts_ok = all(0 < p <= 1 for p in pcts)
-        if not (pcts_ok and self.max_open_positions > 0):
+        counts = (
+            self.cooldown_candles,
+            self.stoploss_guard_count,
+            self.stoploss_guard_window,
+            self.stoploss_guard_pause,
+        )
+        if not (pcts_ok and self.max_open_positions > 0 and all(0 <= c <= 1000 for c in counts)):
             raise ValueError("límites de riesgo inválidos")

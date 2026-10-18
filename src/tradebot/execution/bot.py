@@ -17,15 +17,17 @@ from typing import Any
 
 from tradebot.alerts import Notify
 from tradebot.audit import AuditError, AuditLog
-from tradebot.config import MIN_WINDOW, QTY_STEP
+from tradebot.config import QTY_STEP
 from tradebot.data.validate import check_candles
 from tradebot.execution.paper import BrokerError
 from tradebot.models import Fill, Order, Position, Side
 from tradebot.ports import Broker, MarketData
 from tradebot.risk import RiskEngine
+from tradebot.risk.protections import Exit, buy_block
 from tradebot.strategy import Signal, Strategy, signal
-from tradebot.strategy.engine import min_candles
+from tradebot.strategy.engine import min_candles, window
 from tradebot.strategy.store import ApprovalError
+from tradebot.timeframe import tf_seconds
 
 log = logging.getLogger("tradebot.bot")
 
@@ -80,8 +82,7 @@ class Bot:
     def tick(self) -> TickResult:
         s, now = self.strategy, self.now()
         warm = min_candles(s)
-        window = max(MIN_WINDOW, 3 * warm)
-        candles = self.market.candles(s.symbol, s.timeframe, window)
+        candles = self.market.candles(s.symbol, s.timeframe, window(s))
         if problem := check_candles(candles, s.timeframe, now, warm):
             log.warning("sin operar: %s", problem)
             self._record("bot.skip", s.name, "skip", reason=problem)
@@ -134,6 +135,12 @@ class Bot:
         cid = f"{s.name}-v{s.version}-buy-{ts:%Y%m%dT%H%M}"
         if self.broker.has_fill(cid):
             return TickResult("hold", "la señal de esta vela ya se ejecutó")
+        exits = (
+            Exit(f.ts, "-stop-" in f.client_id) for f in self.broker.fills.values() if f.side is Side.SELL
+        )
+        if why := buy_block(exits, ts, tf_seconds(s.timeframe), self.risk.limits):
+            self._record("order.check", f"{s.symbol} buy", "deny", reason=why)
+            return TickResult("rejected", why)
         day_pnl = self._day_pnl(ref, now)
         px = ref * (1 + self.broker.slippage_pct)
         notional = min(self.risk.equity * s.order_fraction, self.broker.cash / (1 + self.broker.fee_pct))

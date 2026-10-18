@@ -1,13 +1,15 @@
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 
-from tradebot.config import DEFAULT_EQUITY, FEE_PCT, MIN_WINDOW, QTY_STEP, SLIPPAGE_PCT
+from tradebot.config import DEFAULT_EQUITY, FEE_PCT, QTY_STEP, SLIPPAGE_PCT
 from tradebot.models import Candle, Order, RiskLimits, Side
 from tradebot.risk import RiskEngine
+from tradebot.risk.protections import Exit, buy_block
 from tradebot.strategy import Signal, Strategy, signal
-from tradebot.strategy.engine import min_candles
+from tradebot.strategy.engine import min_candles, window
+from tradebot.timeframe import tf_seconds
 
 ZERO = Decimal(0)
 
@@ -93,6 +95,70 @@ class Result:
         return "\n".join(lines)
 
 
+@dataclass(slots=True)
+class _Sim:
+    """Estado de la simulación. Cada método es un paso de la vela; `run` solo los ordena."""
+
+    strategy: Strategy
+    risk: RiskEngine
+    fee_pct: Decimal
+    slippage_pct: Decimal
+    cash: Decimal
+    fees: Decimal = ZERO
+    pos: _Pos | None = None
+    rejected: Counter[str] = field(default_factory=Counter)
+    trades: list[Trade] = field(default_factory=list)
+    exits: list[Exit] = field(default_factory=list)
+
+    def equity(self, price: Decimal) -> Decimal:
+        return self.cash + (self.pos.qty if self.pos else ZERO) * price
+
+    def buy(self, c: Candle, eq_open: Decimal, day_pnl: Decimal) -> None:
+        s = self.strategy
+        if blocked := buy_block(self.exits, c.ts, tf_seconds(s.timeframe), self.risk.limits):
+            self.rejected[blocked] += 1
+            return
+        px = c.open * (1 + self.slippage_pct)
+        notional = min(eq_open * s.order_fraction, self.cash / (1 + self.fee_pct))
+        q = (notional / px).quantize(QTY_STEP, ROUND_DOWN)
+        d = self.risk.check(Order(s.symbol, Side.BUY, q, px, c.ts), 0, day_pnl)
+        if not d.allowed:
+            self.rejected[d.reason] += 1
+            return
+        fee = q * px * self.fee_pct
+        self.cash -= q * px + fee
+        self.pos = _Pos(c.ts, px, q, q * px + fee)
+        self.fees += fee
+
+    def exit_price(self, c: Candle, sell_signal: bool) -> tuple[Decimal | None, bool]:
+        """Precio de salida en esta vela (regla o stop-loss) y si fue por stop; None si no sale."""
+        if self.pos is None:
+            return None, False
+        if sell_signal:
+            return c.open * (1 - self.slippage_pct), False
+        # stop-loss: si la vela toca el nivel, sale ahí (o en la apertura si abrió ya por debajo: hueco)
+        stop = self.pos.price * (1 - self.strategy.stop_loss_pct)
+        if c.low <= stop:
+            return min(stop, c.open) * (1 - self.slippage_pct), True
+        return None, False
+
+    def sell(self, c: Candle, px: Decimal, stopped: bool, day_pnl: Decimal) -> None:
+        pos = self.pos
+        assert pos is not None  # noqa: S101 - invariante: solo se llama con posición
+        d = self.risk.check(Order(self.strategy.symbol, Side.SELL, pos.qty, px, c.ts), 1, day_pnl)
+        if not d.allowed:
+            self.rejected[d.reason] += 1
+            return
+        proceeds = pos.qty * px
+        fee = proceeds * self.fee_pct
+        self.cash, self.fees = self.cash + proceeds - fee, self.fees + fee
+        self.trades.append(
+            Trade(pos.ts, c.ts, pos.price, px, pos.qty, pos.cost, proceeds - fee - pos.cost, stopped)
+        )
+        self.exits.append(Exit(c.ts, stopped))
+        self.pos = None
+
+
 def run(
     strategy: Strategy,
     candles: list[Candle],
@@ -106,14 +172,8 @@ def run(
     if len(candles) < 2:
         raise ValueError("se necesitan al menos 2 velas")
     n, warm = len(candles), min_candles(strategy)
-    window = max(
-        MIN_WINDOW, 3 * warm
-    )  # mismas velas que vería el bot en vivo: ventana fija, no todo el historial
-    risk = RiskEngine(limits or RiskLimits(), equity)
-    cash, fees = equity, ZERO
-    pos: _Pos | None = None
-    rejected: Counter[str] = Counter()
-    trades: list[Trade] = []
+    win = window(strategy)  # mismas velas que vería el bot en vivo: ventana fija, no todo el historial
+    sim = _Sim(strategy, RiskEngine(limits or RiskLimits(), equity), fee_pct, slippage_pct, equity)
     curve: list[tuple[datetime, Decimal]] = []
     pending = Signal.HOLD
     day, day_start, last_equity = candles[0].ts.date(), equity, equity
@@ -121,66 +181,30 @@ def run(
     for i, c in enumerate(candles):
         if c.ts.date() != day:  # día UTC nuevo: la pérdida diaria se mide desde el último cierre
             day, day_start = c.ts.date(), last_equity
-        eq_open = cash + (pos.qty if pos else ZERO) * c.open
-        risk.set_equity(eq_open)
-        risk.observe(eq_open)  # igual que en vivo: caída máxima desde el pico -> kill switch (no más compras)
+        eq_open = sim.equity(c.open)
+        sim.risk.set_equity(eq_open)
+        sim.risk.observe(eq_open)  # igual que en vivo: caída máxima desde el pico -> kill switch
         day_pnl = eq_open - day_start
-        sell_px, stopped = None, False
-        if pending is Signal.BUY and pos is None:
-            px = c.open * (1 + slippage_pct)
-            notional = min(eq_open * strategy.order_fraction, cash / (1 + fee_pct))
-            q = (notional / px).quantize(QTY_STEP, ROUND_DOWN)
-            d = risk.check(Order(strategy.symbol, Side.BUY, q, px, c.ts), 0, day_pnl)
-            if d.allowed:
-                fee = q * px * fee_pct
-                cash -= q * px + fee
-                pos = _Pos(c.ts, px, q, q * px + fee)
-                fees += fee
-            else:
-                rejected[d.reason] += 1
-        elif pending is Signal.SELL and pos is not None:
-            sell_px = c.open * (1 - slippage_pct)
-        if pos is not None and sell_px is None:
-            # stop-loss: si la vela toca el nivel, sale ahí (o en la apertura si abrió ya por debajo: hueco)
-            stop = pos.price * (1 - strategy.stop_loss_pct)
-            if c.low <= stop:
-                sell_px, stopped = min(stop, c.open) * (1 - slippage_pct), True
-        if pos is not None and sell_px is not None:
-            d = risk.check(Order(strategy.symbol, Side.SELL, pos.qty, sell_px, c.ts), 1, day_pnl)
-            if d.allowed:
-                proceeds = pos.qty * sell_px
-                fee = proceeds * fee_pct
-                cash, fees = cash + proceeds - fee, fees + fee
-                trades.append(
-                    Trade(
-                        pos.ts,
-                        c.ts,
-                        pos.price,
-                        sell_px,
-                        pos.qty,
-                        pos.cost,
-                        proceeds - fee - pos.cost,
-                        stopped,
-                    )
-                )
-                pos = None
-            else:
-                rejected[d.reason] += 1
-        last_equity = cash + (pos.qty if pos else ZERO) * c.close
+        if pending is Signal.BUY and sim.pos is None:
+            sim.buy(c, eq_open, day_pnl)
+        px, stopped = sim.exit_price(c, pending is Signal.SELL)
+        if px is not None:
+            sim.sell(c, px, stopped, day_pnl)
+        last_equity = sim.equity(c.close)
         curve.append((c.ts, last_equity))
         pending = Signal.HOLD
         if i < n - 1:
-            pending = signal(strategy, candles[max(0, i + 1 - window) : i + 1], in_position=pos is not None)
+            pending = signal(strategy, candles[max(0, i + 1 - win) : i + 1], in_position=sim.pos is not None)
 
     start = min(warm, n - 1)  # el "comprar y mantener" arranca cuando la estrategia ya podía operar
     return Result(
         label=f"{strategy.name} v{strategy.version} · {strategy.symbol} {strategy.timeframe}",
         initial_equity=equity,
         final_equity=last_equity,
-        trades=tuple(trades),
+        trades=tuple(sim.trades),
         curve=tuple(curve),
-        fees=fees,
-        rejected=dict(rejected),
-        open_at_end=pos is not None,
+        fees=sim.fees,
+        rejected=dict(sim.rejected),
+        open_at_end=sim.pos is not None,
         buy_hold_return=candles[-1].close / candles[start].open - 1,
     )

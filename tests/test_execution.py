@@ -458,3 +458,17 @@ def test_loop_notifies_when_it_halts(tmp_path):
         max_failures=2, notify=msgs.append,
     )  # fmt: skip
     assert code == 3 and len(msgs) == 1 and "DETUVO" in msgs[0]
+
+
+def test_bot_respects_the_cooldown_after_a_sale(tmp_path):
+    exit_over_100 = {"type": "cmp", "left": {"kind": "close"}, "op": ">", "right": 105}
+    m = Market(*flat(5))
+    bot, broker, *_ = make_bot(tmp_path, m, strategy=spec(exit_=exit_over_100))
+    assert bot.tick().action == "buy"
+    m.rows.append(candle(5, o=100, c=110))
+    assert bot.tick().action == "sell"
+    m.rows.append(candle(6))  # la vela justo después de vender
+    r = bot.tick()
+    assert r.action == "rejected" and "espera tras salir" in r.reason
+    m.rows.append(candle(7))
+    assert bot.tick().action == "buy"  # ya pasó una vela completa

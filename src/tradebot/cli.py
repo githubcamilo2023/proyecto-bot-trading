@@ -15,6 +15,7 @@ from tradebot.alerts import channels, config_problems, make_notifier
 from tradebot.audit import AuditError, AuditLog
 from tradebot.backtest import run
 from tradebot.backtest.evaluate import evaluate
+from tradebot.backtest.report import render_html
 from tradebot.config import DEFAULT_EQUITY, FEE_PCT, SLIPPAGE_PCT
 from tradebot.data import CachedMarketData, CandleCache, CcxtSource
 from tradebot.execution import Bot, BrokerError, PaperBroker, run_loop
@@ -86,6 +87,11 @@ def _parser() -> argparse.ArgumentParser:
         "evaluate", parents=[b], help="backtest por tramos: ¿se sostiene en periodos distintos?"
     )
     ev.add_argument("--segments", type=int, default=4, help="número de tramos consecutivos (4)")
+
+    rp = sub.add_parser(
+        "report", parents=[b], help="informe HTML: gráfico con entradas/salidas, capital y tablas"
+    )
+    rp.add_argument("--out", default="data/reports", help="carpeta del informe (data/reports)")
 
     a = sub.add_parser("approve", help="aprueba (con firma) una versión guardada de una estrategia")
     a.add_argument("name")
@@ -217,7 +223,7 @@ def main(
         return 2
     with trace():
         log.info("comando %s", a.cmd)
-        if a.cmd in {"backtest", "evaluate"}:
+        if a.cmd in {"backtest", "evaluate", "report"}:
             return _backtest(a, source, out)
         if a.cmd == "propose":
             return _propose(a, llm, out)
@@ -299,7 +305,20 @@ def _backtest(a: argparse.Namespace, source: CandleSource | None, out: Callable[
             return 2
         out(ev.render())
         return 0
-    out(run(strategy, candles, limits, a.equity, a.fee, a.slippage).summary())
+    result = run(strategy, candles, limits, a.equity, a.fee, a.slippage)
+    if a.cmd == "report":
+        note = f"Tamaño por riesgo simulado ({a.risk_pct:.2%})." if a.risk_pct is not None else ""
+        path = Path(a.out) / f"{strategy.name}-v{strategy.version}.html"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(render_html(result, candles, note), encoding="utf-8")
+        except OSError as e:
+            out(f"Error: no se pudo escribir el informe: {e}")
+            return 2
+        out(result.summary())
+        out(f"\nInforme con gráfico: {path.resolve()}  (ábrelo con doble clic)")
+        return 0
+    out(result.summary())
     return 0
 
 

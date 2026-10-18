@@ -82,3 +82,48 @@ def test_evaluate_rejects_bad_arguments():
         evaluate(s, candles(400), segments=1)
     with pytest.raises(ValueError, match="muy poca historia"):
         evaluate(s, candles(100), segments=4)
+
+
+# --- verificaciones ------------------------------------------------------------------------------------
+
+from tradebot.backtest.evaluate import Checks, scaled, window_consistency  # noqa: E402
+
+CLOSE = {"kind": "close"}
+
+
+def test_scaled_multiplies_every_period_and_keeps_a_minimum_of_two():
+    s = Strategy.model_validate(
+        {
+            **SPEC,
+            "entry": {"type": "all", "of": [
+                {"type": "cmp", "left": {"kind": "rsi", "period": 2}, "op": "<", "right": 10},
+                {"type": "cmp", "left": CLOSE, "op": ">", "right": {"kind": "sma", "period": 200}},
+            ]},
+        }
+    )  # fmt: skip
+    up, down = scaled(s, D("1.2")), scaled(s, D("0.8"))
+    assert up.entry.of[1].right.period == 240 and up.exit.left.period == 17  # type: ignore[union-attr]
+    assert down.entry.of[0].left.period == 2  # 2 x 0.8 = 1.6 -> mínimo 2  # type: ignore[union-attr]
+
+
+def test_window_consistency_needs_enough_history_and_compares_decisions():
+    s = Strategy.model_validate(SPEC)
+    assert window_consistency(s, candles(400)) == (0, 0)  # no alcanza para el doble de ventana
+    checked, diff = window_consistency(s, candles(1500), sample=50)
+    assert checked == 100 and diff >= 0
+
+
+def test_checks_render_flags_fragile_and_window_problems():
+    ok = Checks(10, 0, (("base", D("0.1")), ("−20 %", D("0.05")), ("+20 %", D("0.02"))))
+    text = "\n".join(ok.render())
+    assert "Ventana: OK" in text and "estable" in text and "Datos futuros: imposibles por diseño" in text
+    bad = Checks(10, 3, (("base", D("0.1")), ("−20 %", D("-0.05")), ("+20 %", D("0.02"))))
+    text = "\n".join(bad.render())
+    assert "ATENCIÓN. 3 de 10" in text and "FRÁGIL" in text
+    assert "no hay historia suficiente" in "\n".join(Checks(0, 0, ok.stability).render())
+
+
+def test_evaluate_includes_checks_unless_disabled():
+    s = Strategy.model_validate(SPEC)
+    assert "VERIFICACIONES" in evaluate(s, candles(400)).render()
+    assert "VERIFICACIONES" not in evaluate(s, candles(400), verify=False).render()

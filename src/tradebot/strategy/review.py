@@ -115,7 +115,10 @@ def render_review(r: Review, limits: RiskLimits, killed: bool = False) -> str:
         "  Límites de riesgo que mandan SIEMPRE (la estrategia no puede saltárselos): "
         f"máx. {limits.max_order_pct * 100:.0f}% del capital por orden · "
         f"pérdida diaria máx. {limits.max_daily_loss_pct * 100:.0f}% · "
-        f"máx. {limits.max_open_positions} posiciones."
+        f"caída máx. {limits.max_drawdown_pct * 100:.0f}% · máx. {limits.max_open_positions} posiciones.\n"
+        f"  Protecciones: espera {limits.cooldown_candles} vela(s) tras vender · pausa de "
+        f"{limits.stoploss_guard_pause} velas si saltan {limits.stoploss_guard_count} stop-loss en "
+        f"{limits.stoploss_guard_window} velas."
     )
     if killed:
         lines.append("  ¡Kill switch ACTIVADO! El bot NO comprará hasta que lo quites.")

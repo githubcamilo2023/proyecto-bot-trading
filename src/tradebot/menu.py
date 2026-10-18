@@ -11,6 +11,7 @@ import re
 import secrets
 import subprocess
 import sys
+import webbrowser
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -79,13 +80,14 @@ class Menu:
         launch: Callable[[list[str]], None] | None = None,
         strategies: Path = STRATEGIES,
         audit: Path = AUDIT,
+        open_file: Callable[[str], object] = webbrowser.open,
     ) -> None:
         from tradebot.cli import main  # import diferido: cli importa este módulo solo cuando hace falta
 
         self.out, self.ask, self.secret = out, ask, secret
         self._run = run or (lambda argv: main(argv, out=self.out))
         self.launch = launch or self._launch
-        self.strategies, self.audit = strategies, audit
+        self.strategies, self.audit, self.open_file = strategies, audit, open_file
 
     # --- utilidades ------------------------------------------------------------------------
 
@@ -315,7 +317,8 @@ class Menu:
         self.out(
             f"\n«{name}» v{version}\n  a) Ver qué hace\n  b) Probar en el pasado (backtest)\n"
             "  c) Aprobarla\n  d) Editarla (crea una versión nueva)\n"
-            "  e) Evaluar por tramos (¿se sostiene en periodos distintos?)\n  Enter) Volver"
+            "  e) Evaluar por tramos (¿se sostiene en periodos distintos?)\n"
+            "  f) Informe con gráfico (se abre en el navegador)\n  Enter) Volver"
         )
         choice = self.ask("> ").strip().lower()
         if choice == "a":
@@ -327,7 +330,12 @@ class Menu:
         elif choice == "d":
             self.edit_strategy(name, version)
         elif choice == "e":
-            self._run(["evaluate", name, "--days", "730"])
+            self._run(["evaluate", name, "--days", "1460"])
+        elif choice == "f":
+            code, text = self._run_capture(["report", name, "--days", "1460"])
+            found = re.search(r"Informe con gráfico: (.+?\.html)", text)
+            if code == 0 and found:
+                self.open_file(found.group(1))
 
     def edit_strategy(self, name: str, version: int) -> None:
         try:

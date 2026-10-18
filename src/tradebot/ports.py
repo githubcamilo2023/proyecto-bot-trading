@@ -22,6 +22,7 @@ class Broker(Protocol):
     slippage_pct: Decimal
     cash: Decimal
     position: Position | None
+    fills: dict[str, Fill]  # historial (las protecciones miran las ventas pasadas)
 
     def equity(self, mark_price: Decimal) -> Decimal: ...
 
